@@ -81,6 +81,7 @@ class CapteurDePassage(_Base):
             "complet": b.complet,
             "secondes": b.secondes,
             "fichier": b.fichier,
+            "depot": b.depot,
             "cle_s3": b.cle_s3,
             "erreur": b.erreur,
             "en_cours": self._passeur.en_cours,

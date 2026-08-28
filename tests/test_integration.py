@@ -205,3 +205,97 @@ async def test_les_sources_non_lues_repassent_en_tete_au_passage_suivant(hass):
     gets = [a["url"].rsplit("/r/", 1)[1].removesuffix("/top")
             for a in session.appels if a["methode"] == "GET"]
     assert gets[: len(non_lues)] == non_lues
+
+
+# ── Sans stockage, la collecte a lieu quand même ────────────────────────────
+#
+# C'est ce qui permet d'installer le greffon avant que le bucket existe. Ce que
+# ces cas tiennent, c'est que le silence soit visible : `depot` porte le mot,
+# le capteur le montre, et personne ne prend quinze relevés restés sur la
+# machine pour quinze relevés archivés.
+
+SANS_STOCKAGE = {
+    **{c: v for c, v in DONNEES.items() if not c.startswith("s3_")},
+    **{c: "" for c in DONNEES if c.startswith("s3_")},
+}
+
+
+async def _monter_sans_stockage(hass, session, sources):
+    dossier = Path(hass.config.path("aliud_collecteur"))
+    dossier.mkdir(parents=True, exist_ok=True)
+    (dossier / "sources-reddit.txt").write_text(sources, encoding="utf-8")
+
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN, data=SANS_STOCKAGE, options=OPTIONS
+    )
+    entree.add_to_hass(hass)
+    with patch(
+        "custom_components.aliud_collecteur.async_get_clientsession",
+        return_value=session,
+    ):
+        assert await hass.config_entries.async_setup(entree.entry_id)
+        await hass.async_block_till_done()
+    return entree
+
+
+async def test_sans_stockage_le_releve_s_ecrit_et_rien_ne_part(hass):
+    session = _session_nominale(2, puts=[])  # aucun PUT posé : un envoi lèverait
+    await _monter_sans_stockage(hass, session, "programming\ndevops\n")
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["depot"] == "non_configure"
+    assert bilan["cle_s3"] == ""
+    assert bilan["erreur"] is None
+    assert bilan["resultat"] == "succes", "une collecte complète reste complète"
+    assert bilan["elements"] == 2
+    assert [a for a in session.appels if a["methode"] == "PUT"] == []
+
+    contenu = json.loads(gzip.decompress(Path(bilan["fichier"]).read_bytes()))
+    assert len(contenu["elements"]) == 2
+
+
+async def test_le_capteur_dit_que_rien_n_a_ete_envoye(hass):
+    session = _session_nominale(1, puts=[])
+    await _monter_sans_stockage(hass, session, "programming\n")
+    await _collecter(hass, session)
+
+    etat = hass.states.get("sensor.aliud_collecteur_de_medias_last_run")
+    assert etat.state == "succes"
+    assert etat.attributes["depot"] == "non_configure"
+
+
+async def test_avec_stockage_le_depot_se_dit_envoye(hass):
+    session = _session_nominale(1)
+    await _monter(hass, session, "programming\n")
+    bilan = await _collecter(hass, session)
+    assert bilan["depot"] == "envoye"
+    assert bilan["cle_s3"].startswith("archives/reddit/")
+
+
+async def test_un_essai_sans_depot_se_distingue_d_un_stockage_absent(hass):
+    session = _session_nominale(1, puts=[])
+    await _monter(hass, session, "programming\n")
+    bilan = await _collecter(hass, session, deposer=False)
+    assert bilan["depot"] == "desactive"
+
+
+async def test_un_depot_refuse_porte_son_propre_mot(hass):
+    session = _session_nominale(1, puts=[Reponse(403, corps="AccessDenied")])
+    await _monter(hass, session, "programming\n")
+    bilan = await _collecter(hass, session)
+    assert bilan["depot"] == "refuse"
+    assert Path(bilan["fichier"]).exists()
+
+
+async def test_un_passage_qui_n_a_rien_pu_ouvrir_n_ecrase_pas_le_dernier_releve(hass):
+    # Reddit refuse la poignée de main : le relevé serait vide, et le déposer
+    # remplacerait `dernier.json.gz` par un fichier qui ne dit rien.
+    session = Session(Reponse(401, corps="Unauthorized"))
+    await _monter(hass, session, "programming\n")
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["depot"] == "desactive"
+    assert bilan["resultat"] == "echec"
+    assert [a for a in session.appels if a["methode"] == "PUT"] == []

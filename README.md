@@ -61,6 +61,17 @@ bucket lui-même. Les deux écrans font un appel réel avant de ranger quoi que 
 soit : une clé fausse se voit à la saisie, pas le lendemain matin après une nuit
 sans relevé.
 
+**Le second écran se valide à vide.** Un bucket se provisionne par une chaîne
+d'infrastructure qui a son propre rythme, et le greffon doit pouvoir tourner
+avant : laisser les cinq champs vides installe une collecte sur disque seul. Le
+stockage s'ajoute ensuite par **Reconfigurer**, sans repasser par Reddit ni
+perdre l'état de reprise. Ce qui est refusé, c'est un écran à moitié rempli —
+quatre champs sur cinq est une saisie interrompue, pas une intention.
+
+Rien de tout ça n'est un mode dégradé silencieux : le capteur porte `depot` à
+`non_configure`, parce que quinze relevés qui n'ont jamais quitté la machine ne
+doivent pas ressembler à quinze relevés archivés.
+
 ### La liste des sources
 
 Un fichier texte, une source par ligne, `#` pour commenter :
@@ -108,12 +119,33 @@ sources non lues sont nommées, et elles repassent en tête au passage suivant.
 }
 ```
 
+## Essayer sans bucket
+
+```yaml
+action: aliud_collecteur.collecter
+data:
+  sources: [programming, devops, kubernetes]
+```
+
+Trois sources, un relevé complet en quelques secondes, écrit sous
+`/config/aliud_collecteur/`. `deposer: false` coupe l'envoi même quand le
+stockage est configuré, ce qui sert à essayer un réglage sans rien écrire à
+distance.
+
+Le service rend son bilan : le compte d'éléments, les sources muettes avec leur
+motif, le chemin du fichier, et `depot`.
+
 ## Ce qui se voit dans Home Assistant
 
 Deux capteurs : l'état du dernier passage — `succes`, `partiel` ou `echec` — avec
 en attributs le nombre d'éléments, les sources muettes et leur motif, les sources
-non lues, le fichier local et la clé déposée ; et l'instant de fin du dernier
-passage.
+non lues, le fichier local, la clé déposée, et `depot` ; et l'instant de fin du
+dernier passage.
+
+`depot` prend quatre valeurs, distinctes du verdict du passage : `envoye`,
+`non_configure` (aucun stockage saisi), `desactive` (`deposer: false`, ou un
+passage qui n'a rien pu ouvrir — déposer un relevé vide écraserait
+`dernier.json.gz` par un fichier qui ne dit rien) et `refuse`.
 
 `elements` est en attribut pour une raison : un capteur vert pendant quinze jours
 avec quinze relevés vides est un échec, pas un succès de l'horloge.
@@ -141,8 +173,8 @@ uv pip install --python .venv/bin/python homeassistant==2026.7.4 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Soixante et onze tests, dont la signature SigV4 recoupée contre le vecteur publié
-par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
+Quatre-vingt-deux tests, dont la signature SigV4 recoupée contre le vecteur
+publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**
 

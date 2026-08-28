@@ -116,3 +116,134 @@ async def test_une_seconde_entree_est_refusee(hass):
     )
     assert flux["type"] is FlowResultType.ABORT
     assert flux["reason"] == "already_configured"
+
+
+# ── Le stockage est facultatif ──────────────────────────────────────────────
+#
+# Un bucket se provisionne par une chaîne d'infrastructure qui a son propre
+# rythme. Ces cas fixent ce qui doit rester possible en attendant.
+
+async def test_un_ecran_de_stockage_vide_cree_quand_meme_l_entree(hass):
+    flux = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    with _session(Reponse(200, {"access_token": "j"})):
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+
+    vide = {c: "" for c in STOCKAGE}
+    session = Session()  # aucune réponse posée : un appel lèverait
+    with patch(
+        "custom_components.aliud_collecteur.config_flow.async_get_clientsession",
+        return_value=session,
+    ), patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], vide)
+
+    assert flux["type"] is FlowResultType.CREATE_ENTRY
+    assert session.appels == [], "un écran vide ne doit joindre personne"
+    assert flux["data"]["reddit_client_id"] == "ID"
+    assert flux["data"]["s3_bucket"] == ""
+
+
+async def test_un_stockage_a_moitie_rempli_est_refuse_avant_tout_appel(hass):
+    flux = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    with _session(Reponse(200, {"access_token": "j"})):
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+
+    moitie = {**{c: "" for c in STOCKAGE}, "s3_endpoint": "https://s3.example.net",
+              "s3_bucket": "aliud-collecte"}
+    session = Session()
+    with patch(
+        "custom_components.aliud_collecteur.config_flow.async_get_clientsession",
+        return_value=session,
+    ):
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], moitie)
+
+    assert flux["type"] is FlowResultType.FORM
+    assert flux["errors"] == {"base": "stockage_incomplet"}
+    assert session.appels == []
+
+
+# ── Reconfigurer : ajouter le stockage plus tard ────────────────────────────
+
+async def _entree_sans_stockage(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entree = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=DOMAIN,
+        data={**REDDIT, **{c: "" for c in STOCKAGE}},
+    )
+    entree.add_to_hass(hass)
+    return entree
+
+
+async def test_la_reconfiguration_ajoute_le_stockage_sans_toucher_a_reddit(hass):
+    entree = await _entree_sans_stockage(hass)
+
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await entree.start_reconfigure_flow(hass)
+        assert flux["step_id"] == "reconfigure"
+
+        with _session(Reponse(200, {"access_token": "j"})):
+            flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+        assert flux["step_id"] == "reconfigure_stockage"
+
+        with _session(Reponse(200)):
+            flux = await hass.config_entries.flow.async_configure(
+                flux["flow_id"], STOCKAGE
+            )
+
+    assert flux["type"] is FlowResultType.ABORT
+    assert flux["reason"] == "reconfigure_successful"
+    assert entree.data["s3_bucket"] == "aliud-collecte"
+    assert entree.data["reddit_client_id"] == "ID"
+
+
+async def test_une_cle_secrete_laissee_vide_garde_celle_deja_rangee(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN, data={**REDDIT, **STOCKAGE}
+    )
+    entree.add_to_hass(hass)
+
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await entree.start_reconfigure_flow(hass)
+        with _session(Reponse(200, {"access_token": "j"})):
+            flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+        with _session(Reponse(200)):
+            flux = await hass.config_entries.flow.async_configure(
+                flux["flow_id"], {**STOCKAGE, "s3_secret_key": "", "s3_prefixe": "neuf"}
+            )
+
+    assert flux["reason"] == "reconfigure_successful"
+    assert entree.data["s3_secret_key"] == "SK", "le secret ne devait pas être effacé"
+    assert entree.data["s3_prefixe"] == "neuf"
+
+
+async def test_vider_le_stockage_par_reconfiguration_revient_au_disque_seul(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN, data={**REDDIT, **STOCKAGE}
+    )
+    entree.add_to_hass(hass)
+
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await entree.start_reconfigure_flow(hass)
+        with _session(Reponse(200, {"access_token": "j"})):
+            flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+        session = Session()
+        with patch(
+            "custom_components.aliud_collecteur.config_flow.async_get_clientsession",
+            return_value=session,
+        ):
+            flux = await hass.config_entries.flow.async_configure(
+                flux["flow_id"], {c: "" for c in STOCKAGE}
+            )
+
+    assert flux["reason"] == "reconfigure_successful"
+    assert entree.data["s3_bucket"] == ""
+    assert session.appels == []

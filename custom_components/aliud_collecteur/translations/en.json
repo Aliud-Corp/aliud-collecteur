@@ -15,7 +15,34 @@
       },
       "stockage": {
         "title": "Object storage",
-        "description": "The S3-compatible bucket the daily report is written to. The endpoint is read from the provider's console, on the bucket itself.",
+        "description": "The S3-compatible bucket the daily report is written to. The endpoint is read from the provider's console, on the bucket itself.\n\n**Leave every field empty if the bucket does not exist yet.** Collection runs, the report is written to disk, and nothing is uploaded. Add the storage later through Reconfigure.",
+        "data": {
+          "s3_endpoint": "Endpoint",
+          "s3_region": "Region",
+          "s3_bucket": "Bucket",
+          "s3_access_key": "Access key",
+          "s3_secret_key": "Secret key",
+          "s3_prefixe": "Prefix"
+        },
+        "data_description": {
+          "s3_prefixe": "Optional. Files every report under a common path, useful when the bucket serves more than one purpose."
+        }
+      },
+      "reconfigure": {
+        "title": "Reddit",
+        "description": "Change the registered client, or leave it as it is and go on to storage.",
+        "data": {
+          "reddit_client_id": "Client ID",
+          "reddit_client_secret": "Client secret",
+          "reddit_user_agent": "Declared user agent"
+        },
+        "data_description": {
+          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
+        }
+      },
+      "reconfigure_stockage": {
+        "title": "Object storage",
+        "description": "Fill this in once the bucket exists. Leave the secret key empty to keep the one already stored; empty every field to go back to disk-only collection.",
         "data": {
           "s3_endpoint": "Endpoint",
           "s3_region": "Region",
@@ -34,10 +61,12 @@
       "reddit_bride": "Reddit is throttling this client right now. Try again in a minute.",
       "reddit_injoignable": "Reddit is unreachable from this installation.",
       "stockage_refuse": "Storage refused: no such bucket, or keys without rights on it.",
-      "stockage_injoignable": "The endpoint is unreachable. Check its spelling."
+      "stockage_injoignable": "The endpoint is unreachable. Check its spelling.",
+      "stockage_incomplet": "Storage is half filled in. Either all five fields, or none of them — four out of five is an interrupted entry, not an intention."
     },
     "abort": {
-      "already_configured": "The collector is already configured."
+      "already_configured": "The collector is already configured.",
+      "reconfigure_successful": "Configuration updated."
     }
   },
   "options": {
@@ -69,9 +98,15 @@
     "sensor": {
       "passage": {
         "name": "Last run",
-        "state": { "succes": "Complete", "partiel": "Partial", "echec": "Failed" }
+        "state": {
+          "succes": "Complete",
+          "partiel": "Partial",
+          "echec": "Failed"
+        }
       },
-      "dernier_passage": { "name": "Last run finished" }
+      "dernier_passage": {
+        "name": "Last run finished"
+      }
     }
   },
   "services": {
@@ -79,9 +114,18 @@
       "name": "Collect",
       "description": "Runs a pass right now, without waiting for the hour.",
       "fields": {
-        "sources": { "name": "Sources", "description": "Sources to read instead of the ones in the file." },
-        "limite": { "name": "Limit", "description": "Read only the first N sources." },
-        "deposer": { "name": "Upload", "description": "Send the report to object storage." }
+        "sources": {
+          "name": "Sources",
+          "description": "Sources to read instead of the ones in the file."
+        },
+        "limite": {
+          "name": "Limit",
+          "description": "Read only the first N sources."
+        },
+        "deposer": {
+          "name": "Upload",
+          "description": "Send the report to object storage. Ignored when no storage is configured."
+        }
       }
     }
   }

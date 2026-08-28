@@ -7,6 +7,13 @@ passage vivrait à côté de cet état, et le jour où quelqu'un la duplique ou 
 déplace, la reprise se désynchronise sans rien dire. L'heure se règle dans les
 options de l'intégration.
 
+LE DÉPÔT PEUT NE PAS EXISTER, ET LE PASSAGE A QUAND MÊME LIEU
+Un bucket se provisionne par une chaîne d'infrastructure qui a son propre
+rythme. Tant qu'il manque, la collecte tourne et le relevé s'écrit sur le
+disque ; `depot` vaut `non_configure` et le capteur le porte. Ce n'est pas un
+mode dégradé silencieux : quinze relevés qui n'ont jamais quitté la machine se
+lisent sur l'écran, pas dans un journal.
+
 CE QUI SE PASSE QUAND LE DÉPÔT ÉCHOUE
 Le relevé local est écrit avant l'envoi. Un `PUT` refusé laisse donc un fichier
 complet sur le disque, et le passage suivant le reprend. Perdre une collecte de
@@ -68,6 +75,10 @@ from .const import (
     PAR_SOURCE_DEFAUT,
     PLATEFORMES,
     RELEVES_GARDES_DEFAUT,
+    DEPOT_DESACTIVE,
+    DEPOT_ENVOYE,
+    DEPOT_NON_CONFIGURE,
+    DEPOT_REFUSE,
     RESULTAT_ECHEC,
     RESULTAT_PARTIEL,
     RESULTAT_SUCCES,
@@ -107,6 +118,7 @@ class Bilan:
     sources_non_lues: list[str] = field(default_factory=list)
     complet: bool = False
     fichier: str = ""
+    depot: str = DEPOT_NON_CONFIGURE
     cle_s3: str = ""
     erreur: str | None = None
 
@@ -246,13 +258,16 @@ class Passeur:
             int(options.get(OPT_RELEVES_GARDES, RELEVES_GARDES_DEFAUT)),
         )
 
-        if deposer and resultat.erreur is None:
+        bilan.depot = self._etat_du_depot(deposer, resultat.erreur)
+        if bilan.depot == DEPOT_ENVOYE:
             try:
                 bilan.cle_s3 = await self._deposer(session, media, resultat.debut, octets)
             except depot_s3.DepotRefuse as exc:
+                bilan.depot = DEPOT_REFUSE
                 bilan.erreur = f"dépôt refusé : {exc}"
                 _LOGGER.error("aliud_collecteur : %s", bilan.erreur)
             except Exception as exc:  # noqa: BLE001
+                bilan.depot = DEPOT_REFUSE
                 bilan.erreur = f"dépôt impossible : {exc}"
                 _LOGGER.error("aliud_collecteur : %s", bilan.erreur)
 
@@ -260,13 +275,14 @@ class Passeur:
         self.bilan = bilan
         await self._retenir(media, resultat.sources_non_lues, bilan)
         _LOGGER.info(
-            "aliud_collecteur : %s — %d éléments, %d/%d sources, %.1f s, %s",
+            "aliud_collecteur : %s — %d éléments, %d/%d sources, %.1f s, %s, dépôt %s",
             media,
             bilan.elements,
             bilan.sources_lues,
             bilan.sources_declarees,
             bilan.secondes,
             bilan.resultat,
+            bilan.depot,
         )
         return bilan
 
@@ -287,6 +303,31 @@ class Passeur:
             encodage="gzip",
         )
         return stockage.cle_complete(cle)
+
+    def _etat_du_depot(self, demande: bool, erreur: str | None) -> str:
+        """Ce qui décide qu'un envoi est tenté, et le mot qui dit pourquoi non."""
+        if not self._stockage_configure():
+            return DEPOT_NON_CONFIGURE
+        if not demande:
+            return DEPOT_DESACTIVE
+        if erreur is not None:
+            # Le passage n'a rien pu ouvrir : déposer un relevé vide écraserait
+            # `dernier.json.gz` avec un fichier qui ne dit rien.
+            return DEPOT_DESACTIVE
+        return DEPOT_ENVOYE
+
+    def _stockage_configure(self) -> bool:
+        d = self.entry.data
+        return all(
+            str(d.get(c, "")).strip()
+            for c in (
+                CONF_S3_ENDPOINT,
+                CONF_S3_REGION,
+                CONF_S3_BUCKET,
+                CONF_S3_ACCESS_KEY,
+                CONF_S3_SECRET_KEY,
+            )
+        )
 
     # ── L'état gardé entre deux passages ────────────────────────────────────
 
@@ -321,6 +362,12 @@ class Passeur:
 
 
 def _verdict(bilan: Bilan) -> str:
+    """`succes` veut dire que le passage a fait tout ce qu'on lui demandait.
+
+    Un stockage absent n'est pas un échec du passage : personne ne lui a demandé
+    d'envoyer quoi que ce soit. Ce que ça vaut se lit dans `depot`, et le capteur
+    le porte — c'est là que quinze relevés restés sur la machine se voient.
+    """
     if bilan.erreur and bilan.elements == 0:
         return RESULTAT_ECHEC
     if bilan.complet and not bilan.erreur:

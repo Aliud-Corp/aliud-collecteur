@@ -10,6 +10,17 @@ ON VÉRIFIE À LA SAISIE, PAS AU PREMIER PASSAGE
 Les deux écrans font un appel réel : une poignée de main Reddit, un `HEAD` sur
 le bucket. Une configuration fausse découverte au passage de 06:30 est une
 configuration fausse découverte le lendemain matin, après une nuit sans relevé.
+
+LE STOCKAGE EST FACULTATIF, ET CE N'EST PAS UNE COMMODITÉ
+Un bucket se provisionne par une chaîne d'infrastructure qui a son propre
+rythme, et le greffon doit pouvoir tourner avant. Le second écran se valide donc
+à vide : la collecte a lieu, le relevé s'écrit sur le disque, et rien n'est
+envoyé. Le stockage s'ajoute ensuite par « Reconfigurer », sans repasser par
+Reddit ni perdre l'état de reprise.
+
+Ce que ça n'est pas : un mode dégradé silencieux. Le capteur porte `depot` à
+`non_configure`, parce qu'un capteur vert pendant quinze jours sans qu'un octet
+soit parti est un échec qui a l'air d'un succès.
 """
 
 from __future__ import annotations
@@ -90,16 +101,41 @@ SCHEMA_REDDIT = vol.Schema(
     }
 )
 
-SCHEMA_STOCKAGE = vol.Schema(
-    {
-        vol.Required(CONF_S3_ENDPOINT): _TEXTE,
-        vol.Required(CONF_S3_REGION, default="gra"): _TEXTE,
-        vol.Required(CONF_S3_BUCKET): _TEXTE,
-        vol.Required(CONF_S3_ACCESS_KEY): _TEXTE,
-        vol.Required(CONF_S3_SECRET_KEY): _SECRET,
-        vol.Optional(CONF_S3_PREFIXE, default=""): _TEXTE,
-    }
+# Tout est facultatif : l'écran se valide à vide tant qu'aucun bucket n'existe.
+# Ce qui reste exigé est la cohérence — quatre champs sur cinq remplis est une
+# saisie interrompue, pas une intention.
+CHAMPS_STOCKAGE = (
+    CONF_S3_ENDPOINT,
+    CONF_S3_REGION,
+    CONF_S3_BUCKET,
+    CONF_S3_ACCESS_KEY,
+    CONF_S3_SECRET_KEY,
+    CONF_S3_PREFIXE,
 )
+INDISPENSABLES = (
+    CONF_S3_ENDPOINT,
+    CONF_S3_REGION,
+    CONF_S3_BUCKET,
+    CONF_S3_ACCESS_KEY,
+    CONF_S3_SECRET_KEY,
+)
+
+
+def _schema_stockage(defauts: dict[str, Any] | None = None) -> vol.Schema:
+    d = defauts or {}
+    return vol.Schema(
+        {
+            vol.Optional(CONF_S3_ENDPOINT, default=d.get(CONF_S3_ENDPOINT, "")): _TEXTE,
+            vol.Optional(CONF_S3_REGION, default=d.get(CONF_S3_REGION, "")): _TEXTE,
+            vol.Optional(CONF_S3_BUCKET, default=d.get(CONF_S3_BUCKET, "")): _TEXTE,
+            vol.Optional(CONF_S3_ACCESS_KEY, default=d.get(CONF_S3_ACCESS_KEY, "")): _TEXTE,
+            vol.Optional(CONF_S3_SECRET_KEY, default=""): _SECRET,
+            vol.Optional(CONF_S3_PREFIXE, default=d.get(CONF_S3_PREFIXE, "")): _TEXTE,
+        }
+    )
+
+
+SCHEMA_STOCKAGE = _schema_stockage()
 
 
 class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
@@ -134,15 +170,87 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         erreurs: dict[str, str] = {}
         if user_input is not None:
-            erreur = await _essayer_stockage(self.hass, user_input)
+            erreur = await _valider_stockage(self.hass, user_input)
             if erreur:
                 erreurs["base"] = erreur
             else:
-                self._donnees.update(user_input)
+                self._donnees.update(_nettoyer(user_input))
                 return self.async_create_entry(title=NOM, data=self._donnees)
 
         return self.async_show_form(
-            step_id="stockage", data_schema=SCHEMA_STOCKAGE, errors=erreurs
+            step_id="stockage",
+            data_schema=SCHEMA_STOCKAGE,
+            errors=erreurs,
+            last_step=True,
+        )
+
+    # ── Reconfigurer : ajouter le stockage plus tard, ou tourner les clés ────
+    #
+    # Un flux de reconfiguration plutôt que des champs dans les options : ce
+    # sont des identifiants, ils vivent dans `data` avec les autres, et ils se
+    # vérifient par un appel réel avant d'être rangés. Les options portent des
+    # réglages, pas des clés.
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entree = self._get_reconfigure_entry()
+        erreurs: dict[str, str] = {}
+        if user_input is not None:
+            erreur = await _essayer_reddit(self.hass, user_input)
+            if erreur:
+                erreurs["base"] = erreur
+            else:
+                self._donnees = {**entree.data, **user_input}
+                return await self.async_step_reconfigure_stockage()
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                SCHEMA_REDDIT,
+                {
+                    CONF_REDDIT_CLIENT_ID: entree.data.get(CONF_REDDIT_CLIENT_ID, ""),
+                    CONF_REDDIT_USER_AGENT: entree.data.get(CONF_REDDIT_USER_AGENT, ""),
+                },
+            ),
+            errors=erreurs,
+        )
+
+    async def async_step_reconfigure_stockage(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entree = self._get_reconfigure_entry()
+        erreurs: dict[str, str] = {}
+        if user_input is not None:
+            # Le secret est le seul champ qui ne se réaffiche pas. Laissé vide
+            # alors que le reste est rempli, il veut dire « garde celui d'avant »
+            # — sinon rouvrir cet écran pour changer un préfixe obligerait à
+            # ressaisir une clé qu'on n'a peut-être plus sous la main.
+            #
+            # Il ne se recopie que si un autre champ est rempli. Sinon vider
+            # l'écran, qui est la façon de revenir au disque seul, remettrait
+            # une clé toute seule et l'écran refuserait une saisie incomplète
+            # que personne n'a faite.
+            saisie = _nettoyer(user_input)
+            autres = [
+                c for c in INDISPENSABLES
+                if c != CONF_S3_SECRET_KEY and saisie.get(c)
+            ]
+            if autres and not saisie.get(CONF_S3_SECRET_KEY):
+                saisie[CONF_S3_SECRET_KEY] = entree.data.get(CONF_S3_SECRET_KEY, "")
+            erreur = await _valider_stockage(self.hass, saisie)
+            if erreur:
+                erreurs["base"] = erreur
+            else:
+                return self.async_update_reload_and_abort(
+                    entree, data={**self._donnees, **saisie}
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure_stockage",
+            data_schema=_schema_stockage(entree.data),
+            errors=erreurs,
+            last_step=True,
         )
 
     @staticmethod
@@ -211,15 +319,30 @@ async def _essayer_reddit(hass: Any, saisie: dict[str, Any]) -> str | None:
     return None
 
 
+def _nettoyer(saisie: dict[str, Any]) -> dict[str, Any]:
+    """Les champs de stockage, débarrassés de leurs espaces."""
+    return {c: str(v).strip() for c, v in saisie.items()}
+
+
+async def _valider_stockage(hass: Any, saisie: dict[str, Any]) -> str | None:
+    """Vide, complet, ou refusé. Un écran vide est une réponse valable."""
+    remplis = [c for c in INDISPENSABLES if str(saisie.get(c, "")).strip()]
+    if not remplis:
+        return None
+    if len(remplis) < len(INDISPENSABLES):
+        return "stockage_incomplet"
+    return await _essayer_stockage(hass, saisie)
+
+
 async def _essayer_stockage(hass: Any, saisie: dict[str, Any]) -> str | None:
     """Un `HEAD` sur le bucket. Rend la clé d'erreur, ou `None`."""
     stockage = depot_s3.Stockage(
-        endpoint=saisie[CONF_S3_ENDPOINT].strip(),
-        region=saisie[CONF_S3_REGION].strip(),
-        bucket=saisie[CONF_S3_BUCKET].strip(),
-        access_key=saisie[CONF_S3_ACCESS_KEY].strip(),
-        secret_key=saisie[CONF_S3_SECRET_KEY].strip(),
-        prefixe=saisie.get(CONF_S3_PREFIXE, "").strip(),
+        endpoint=str(saisie.get(CONF_S3_ENDPOINT, "")).strip(),
+        region=str(saisie.get(CONF_S3_REGION, "")).strip(),
+        bucket=str(saisie.get(CONF_S3_BUCKET, "")).strip(),
+        access_key=str(saisie.get(CONF_S3_ACCESS_KEY, "")).strip(),
+        secret_key=str(saisie.get(CONF_S3_SECRET_KEY, "")).strip(),
+        prefixe=str(saisie.get(CONF_S3_PREFIXE, "")).strip(),
     )
     try:
         await depot_s3.verifier(async_get_clientsession(hass), stockage)

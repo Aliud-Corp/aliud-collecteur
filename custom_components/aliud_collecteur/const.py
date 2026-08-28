@@ -73,3 +73,11 @@ SIGNAL_PASSAGE = f"{DOMAIN}_passage"
 RESULTAT_SUCCES = "succes"
 RESULTAT_PARTIEL = "partiel"
 RESULTAT_ECHEC = "echec"
+
+# Ce que le relevé est devenu. Distinct du verdict du passage : une collecte
+# complète qui n'a nulle part où aller reste une collecte complète, et c'est ce
+# mot-là qui dit qu'aucun octet n'est parti.
+DEPOT_ENVOYE = "envoye"
+DEPOT_NON_CONFIGURE = "non_configure"
+DEPOT_DESACTIVE = "desactive"
+DEPOT_REFUSE = "refuse"
