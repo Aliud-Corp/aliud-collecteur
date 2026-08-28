@@ -6,6 +6,10 @@ requires-python = ">=3.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# La racine du dépôt sur sys.path, explicitement. `python -m pytest` l'y met
+# tout seul et `pytest` nu ne le fait pas : la différence a coûté une CI rouge
+# sur une suite verte en local, le 28/08/2026.
+pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "-q"
 

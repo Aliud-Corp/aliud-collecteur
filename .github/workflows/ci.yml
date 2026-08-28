@@ -13,14 +13,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: home-assistant/actions/hassfest@master
 
-  hacs:
-    name: hacs
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hacs/action@main
-        with:
-          category: integration
+  # Pas de job `hacs/action`. Il valide une candidature au magasin HACS par
+  # défaut : des sujets de dépôt, une licence, et une inscription au dépôt
+  # `home-assistant/brands`. Ce dépôt est privé et s'installe en dépôt
+  # personnalisé, donc l'action refuserait une publication que personne ne
+  # demande. Le jour où le dépôt devient public et candidate, ce bloc revient
+  # avec ce qu'il exige.
 
   tests:
     name: tests

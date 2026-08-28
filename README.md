@@ -37,9 +37,14 @@ appliqué.
 
 ## Installation
 
-Par HACS, en dépôt personnalisé de catégorie *Integration*, puis **Ajouter une
-intégration → Aliud**. Ou en copiant `custom_components/aliud_collecteur/` dans
-le répertoire `custom_components` de Home Assistant.
+Le dépôt est privé, donc il ne passe pas par le magasin HACS. Deux chemins :
+
+- **HACS en dépôt personnalisé**, catégorie *Integration*. Un dépôt privé
+  demande un jeton personnel GitHub dans la configuration de HACS.
+- **À la main** : copier `custom_components/aliud_collecteur/` dans le
+  répertoire `custom_components` de Home Assistant, puis redémarrer.
+
+Ensuite, **Ajouter une intégration → Aliud**.
 
 ## Configuration
 
