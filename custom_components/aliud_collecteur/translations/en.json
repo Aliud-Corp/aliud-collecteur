@@ -1,0 +1,88 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Reddit",
+        "description": "An application registered at reddit.com/prefs/apps, of type \"script\" or \"web app\". robots.txt refuses every anonymous agent, .rss paths included: registration is the only door.",
+        "data": {
+          "reddit_client_id": "Client ID",
+          "reddit_client_secret": "Client secret",
+          "reddit_user_agent": "Declared user agent"
+        },
+        "data_description": {
+          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
+        }
+      },
+      "stockage": {
+        "title": "Object storage",
+        "description": "The S3-compatible bucket the daily report is written to. The endpoint is read from the provider's console, on the bucket itself.",
+        "data": {
+          "s3_endpoint": "Endpoint",
+          "s3_region": "Region",
+          "s3_bucket": "Bucket",
+          "s3_access_key": "Access key",
+          "s3_secret_key": "Secret key",
+          "s3_prefixe": "Prefix"
+        },
+        "data_description": {
+          "s3_prefixe": "Optional. Files every report under a common path, useful when the bucket serves more than one purpose."
+        }
+      }
+    },
+    "error": {
+      "reddit_refuse": "Reddit refused these credentials. Check that the application is a confidential client and that the declared agent is not generic.",
+      "reddit_bride": "Reddit is throttling this client right now. Try again in a minute.",
+      "reddit_injoignable": "Reddit is unreachable from this installation.",
+      "stockage_refuse": "Storage refused: no such bucket, or keys without rights on it.",
+      "stockage_injoignable": "The endpoint is unreachable. Check its spelling."
+    },
+    "abort": {
+      "already_configured": "The collector is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Pace and bounds of one run",
+        "description": "Reddit grants a registered client 100 requests per minute, so a hundred sources fit inside one minute of budget. The default rate spends less than a third of it and keeps the rest for retries.",
+        "data": {
+          "heure": "Hour of the run",
+          "minute": "Minute of the run",
+          "debit_par_minute": "Requests per minute",
+          "gigue_min": "Minimum jitter (s)",
+          "gigue_max": "Maximum jitter (s)",
+          "tentatives_par_source": "Attempts per source",
+          "budget_secondes": "Budget for one run (s)",
+          "elements_par_source": "Items per source",
+          "fenetre": "Ranking window",
+          "releves_gardes": "Reports kept locally",
+          "garder_brut": "Keep the original payload"
+        },
+        "data_description": {
+          "budget_secondes": "Past this delay the report ships with what it has, unread sources are named, and they move to the front of the queue on the next run.",
+          "garder_brut": "The archive is raw: dropping the original payload makes files smaller and cannot be undone after the fact."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "passage": {
+        "name": "Last run",
+        "state": { "succes": "Complete", "partiel": "Partial", "echec": "Failed" }
+      },
+      "dernier_passage": { "name": "Last run finished" }
+    }
+  },
+  "services": {
+    "collecter": {
+      "name": "Collect",
+      "description": "Runs a pass right now, without waiting for the hour.",
+      "fields": {
+        "sources": { "name": "Sources", "description": "Sources to read instead of the ones in the file." },
+        "limite": { "name": "Limit", "description": "Read only the first N sources." },
+        "deposer": { "name": "Upload", "description": "Send the report to object storage." }
+      }
+    }
+  }
+}

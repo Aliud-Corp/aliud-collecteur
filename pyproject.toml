@@ -1,0 +1,14 @@
+[project]
+name = "aliud-collecteur"
+version = "0.1.0"
+description = "Home Assistant integration that collects media and files a dated report on object storage"
+requires-python = ">=3.14"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"

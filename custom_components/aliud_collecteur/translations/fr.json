@@ -1,0 +1,92 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Reddit",
+        "description": "Une application enregistrée sur reddit.com/prefs/apps, de type « script » ou « web app ». robots.txt refuse tout agent anonyme, y compris sur les chemins .rss : l'enregistrement est la seule porte.",
+        "data": {
+          "reddit_client_id": "Identifiant du client",
+          "reddit_client_secret": "Secret du client",
+          "reddit_user_agent": "Agent déclaré"
+        },
+        "data_description": {
+          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider."
+        }
+      },
+      "stockage": {
+        "title": "Stockage objet",
+        "description": "Le bucket compatible S3 où le relevé du jour est déposé. Le point d'entrée se lit dans la console du fournisseur, sur le bucket.",
+        "data": {
+          "s3_endpoint": "Point d'entrée",
+          "s3_region": "Région",
+          "s3_bucket": "Bucket",
+          "s3_access_key": "Clé d'accès",
+          "s3_secret_key": "Clé secrète",
+          "s3_prefixe": "Préfixe"
+        },
+        "data_description": {
+          "s3_prefixe": "Facultatif. Range les relevés sous un chemin commun, utile quand le bucket sert à plusieurs choses."
+        }
+      }
+    },
+    "error": {
+      "reddit_refuse": "Reddit a refusé ces identifiants. Vérifier que l'application est un client confidentiel et que l'agent déclaré n'est pas générique.",
+      "reddit_bride": "Reddit bride ce client en ce moment. Réessayer dans une minute.",
+      "reddit_injoignable": "Reddit est injoignable depuis cette installation.",
+      "stockage_refuse": "Le stockage a refusé : bucket inexistant, ou clés sans droit dessus.",
+      "stockage_injoignable": "Le point d'entrée est injoignable. Vérifier son écriture."
+    },
+    "abort": {
+      "already_configured": "Le collecteur est déjà configuré."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Rythme et bornes d'un passage",
+        "description": "Reddit accorde cent requêtes par minute à un client enregistré. Cent sources tiennent donc dans une minute de budget ; le débit par défaut en consomme moins d'un tiers et garde la marge pour les réessais.",
+        "data": {
+          "heure": "Heure du passage",
+          "minute": "Minute du passage",
+          "debit_par_minute": "Requêtes par minute",
+          "gigue_min": "Gigue minimale (s)",
+          "gigue_max": "Gigue maximale (s)",
+          "tentatives_par_source": "Tentatives par source",
+          "budget_secondes": "Budget d'un passage (s)",
+          "elements_par_source": "Éléments par source",
+          "fenetre": "Fenêtre du classement",
+          "releves_gardes": "Relevés gardés localement",
+          "garder_brut": "Garder la charge d'origine"
+        },
+        "data_description": {
+          "budget_secondes": "Passé ce délai, le relevé sort avec ce qu'il a, les sources non lues sont nommées, et elles repassent en tête au passage suivant.",
+          "garder_brut": "L'archive est brute : couper la charge d'origine allège les fichiers mais ne se répare pas rétroactivement."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "passage": {
+        "name": "Dernier passage",
+        "state": {
+          "succes": "Complet",
+          "partiel": "Partiel",
+          "echec": "Échec"
+        }
+      },
+      "dernier_passage": { "name": "Fin du dernier passage" }
+    }
+  },
+  "services": {
+    "collecter": {
+      "name": "Collecter",
+      "description": "Lance un passage tout de suite, sans attendre l'heure.",
+      "fields": {
+        "sources": { "name": "Sources", "description": "Les sources à lire, à la place de celles du fichier." },
+        "limite": { "name": "Limite", "description": "Ne lire que les N premières sources." },
+        "deposer": { "name": "Déposer", "description": "Envoyer le relevé sur le stockage objet." }
+      }
+    }
+  }
+}

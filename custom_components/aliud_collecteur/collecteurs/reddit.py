@@ -1,0 +1,331 @@
+"""Reddit, par client enregistré, et jamais autrement.
+
+LA PORTE EST L'ENREGISTREMENT, PAS LA DISCRÉTION
+`reddit.com/robots.txt` déclare `User-agent: *` puis `Disallow: /`, et ce refus
+couvre `/r/<sub>/top/.rss` comme le reste. Un flux RSS servi par un hôte qui
+refuse la collecte reste refusé. Ralentir ne change rien à ce refus : ce qui le
+lève est `REDDIT_CLIENT_ID` et `REDDIT_CLIENT_SECRET`, obtenus sur
+`reddit.com/prefs/apps`. Sans eux, `ouvrir` lève `PassageImpossible` et aucune
+requête de collecte n'est tentée.
+
+CE QUI N'ARRIVERA JAMAIS ICI
+La réutilisation d'une session de navigateur ou de cookies exportés. Un `403`
+opposé à un client non enregistré est un contrôle d'accès appliqué ; le
+franchir avec des identifiants de session est un accès automatisé non autorisé.
+
+UN JETON PAR PASSAGE, JAMAIS UN PAR SOURCE
+Les jetons `client_credentials` durent une heure. Cent sources en dépenseraient
+cent poignées de main, soit la moitié du budget de la minute pour rien.
+"""
+
+from __future__ import annotations
+
+import base64
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+from . import (
+    Collecteur,
+    Element,
+    Moisson,
+    PassageImpossible,
+    Source,
+    SourceMuette,
+    TropDeRequetes,
+    enregistrer,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+JETON_URL = "https://www.reddit.com/api/v1/access_token"
+LISTING_URL = "https://oauth.reddit.com/r/{sub}/top"
+
+# Le point de départ, écrit dans `/config/aliud_collecteur/sources-reddit.txt`
+# au premier passage puis jamais réécrit : la liste appartient au board, pas au
+# code. Cent sources, choisies pour couvrir ce que le studio regarde — produit,
+# développement, infrastructure, qualité, sécurité, données, marché.
+SOURCES_PAR_DEFAUT = """\
+programming
+ExperiencedDevs
+devops
+kubernetes
+sysadmin
+netsec
+QualityAssurance
+softwaretesting
+ProductManagement
+SaaS
+webdev
+javascript
+typescript
+reactjs
+node
+golang
+rust
+python
+django
+flask
+fastapi
+java
+kotlin
+csharp
+dotnet
+php
+laravel
+ruby
+rails
+elixir
+scala
+haskell
+cpp
+c_programming
+swift
+androiddev
+iOSProgramming
+FlutterDev
+reactnative
+docker
+selfhosted
+homelab
+terraform
+ansible
+aws
+AZURE
+googlecloud
+linuxadmin
+linux
+debian
+archlinux
+networking
+PFSENSE
+sre
+devsecops
+cybersecurity
+blueteamsec
+AskNetsec
+Malware
+ReverseEngineering
+crypto
+dataengineering
+datascience
+MachineLearning
+LocalLLaMA
+LanguageTechnology
+analytics
+PowerBI
+SQL
+PostgreSQL
+mysql
+mongodb
+redis
+elasticsearch
+apachekafka
+bigdata
+learnprogramming
+cscareerquestions
+softwarearchitecture
+microservices
+graphql
+api
+opensource
+github
+gitlab
+vim
+neovim
+emacs
+vscode
+jetbrains
+UXDesign
+userexperience
+web_design
+Frontend
+accessibility
+startups
+Entrepreneur
+smallbusiness
+agile
+scrum
+"""
+
+
+@dataclass(slots=True)
+class Contexte:
+    """Ce qui dure un passage : le jeton et l'agent qui l'accompagne."""
+
+    jeton: str
+    agent: str
+
+
+@enregistrer
+class Reddit:
+    """Le collecteur Reddit. Une requête par sous-reddit, une seule."""
+
+    media = "reddit"
+
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        user_agent: str,
+        noms: list[str],
+        par_source: int = 25,
+        fenetre: str = "day",
+    ) -> None:
+        self._id = client_id
+        self._secret = client_secret
+        self._agent = user_agent
+        self._noms = noms
+        self._par_source = max(1, min(int(par_source), 100))
+        self._fenetre = fenetre if fenetre in ("hour", "day", "week", "month") else "day"
+
+    def sources(self) -> list[Source]:
+        return [Source(media=self.media, nom=nom) for nom in self._noms]
+
+    async def ouvrir(self, session: Any) -> Contexte:
+        """La poignée de main, une fois par passage.
+
+        Ce qui manque ici arrête le passage entier : cent sources refusées pour
+        la même raison ne valent pas cent requêtes.
+        """
+        if not self._id or not self._secret:
+            raise PassageImpossible(
+                "reddit : client_id ou client_secret absent. robots.txt refuse "
+                "tout agent non enregistré, y compris sur les chemins .rss."
+            )
+        if not self._agent:
+            raise PassageImpossible(
+                "reddit : user_agent absent. Un agent générique se fait brider, "
+                "donc il est refusé plutôt que deviné. Forme attendue : "
+                "<plateforme>:<identifiant>:<version> (by /u/<compte>)"
+            )
+
+        autorisation = base64.b64encode(f"{self._id}:{self._secret}".encode()).decode()
+        async with session.post(
+            JETON_URL,
+            data={"grant_type": "client_credentials"},
+            headers={
+                "Authorization": f"Basic {autorisation}",
+                "User-Agent": self._agent,
+            },
+        ) as reponse:
+            if reponse.status == 429:
+                raise TropDeRequetes(
+                    "reddit : la poignée de main est bridée",
+                    attente=_attente(reponse.headers),
+                )
+            if reponse.status != 200:
+                corps = (await reponse.text())[:200]
+                raise PassageImpossible(
+                    f"reddit : la poignée de main a rendu {reponse.status}. "
+                    f"Vérifier que l'application est un client confidentiel. {corps}"
+                )
+            charge = await reponse.json(content_type=None)
+
+        jeton = (charge or {}).get("access_token", "")
+        if not jeton:
+            raise PassageImpossible(
+                "reddit : la poignée de main n'a rien rendu. Vérifier que "
+                "l'application est un client confidentiel."
+            )
+        return Contexte(jeton=jeton, agent=self._agent)
+
+    async def moissonner(
+        self, session: Any, contexte: Contexte, source: Source
+    ) -> Moisson:
+        url = LISTING_URL.format(sub=source.nom)
+        parametres = {
+            "t": self._fenetre,
+            "limit": str(self._par_source),
+            "raw_json": "1",
+        }
+        entetes = {
+            "Authorization": f"bearer {contexte.jeton}",
+            "User-Agent": contexte.agent,
+        }
+        async with session.get(url, params=parametres, headers=entetes) as reponse:
+            restant, remise = _debit(reponse.headers)
+            if reponse.status == 429:
+                raise TropDeRequetes(
+                    f"reddit : r/{source.nom} bridé", attente=_attente(reponse.headers)
+                )
+            if reponse.status in (401, 403):
+                # 401 sur une source isolée veut dire jeton expiré en cours de
+                # passage ; il n'y a rien à réessayer sans rouvrir, et rouvrir
+                # est le travail de l'ordonnanceur au passage suivant.
+                raise SourceMuette(f"reddit : r/{source.nom} a rendu {reponse.status}")
+            if reponse.status == 404:
+                raise SourceMuette(f"reddit : r/{source.nom} n'existe pas")
+            if reponse.status >= 500:
+                raise TropDeRequetes(f"reddit : r/{source.nom} a rendu {reponse.status}")
+            if reponse.status != 200:
+                raise SourceMuette(
+                    f"reddit : r/{source.nom} a rendu {reponse.status}"
+                )
+            charge = await reponse.json(content_type=None)
+
+        collecte_le = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        elements = [
+            _element(enfant.get("data") or {}, source.nom, collecte_le)
+            for enfant in (charge.get("data") or {}).get("children") or []
+        ]
+        return Moisson(
+            elements=[e for e in elements if e is not None],
+            restant=restant,
+            remise_a_zero=remise,
+        )
+
+
+def _element(donnee: dict[str, Any], sous_reddit: str, collecte_le: str) -> Element | None:
+    identifiant = donnee.get("name") or donnee.get("id")
+    if not identifiant:
+        return None
+    permalien = donnee.get("permalink") or ""
+    cree = donnee.get("created_utc")
+    return Element(
+        media="reddit",
+        source=sous_reddit,
+        identifiant=str(identifiant),
+        titre=donnee.get("title") or "",
+        url=donnee.get("url") or "",
+        permalien=f"https://www.reddit.com{permalien}" if permalien else "",
+        auteur=donnee.get("author") or "",
+        points=int(donnee.get("score") or 0),
+        commentaires=int(donnee.get("num_comments") or 0),
+        cree_le=(
+            datetime.fromtimestamp(float(cree), tz=timezone.utc).isoformat(
+                timespec="seconds"
+            )
+            if cree
+            else ""
+        ),
+        collecte_le=collecte_le,
+        brut=donnee,
+    )
+
+
+def _debit(entetes: Any) -> tuple[int | None, float | None]:
+    """Ce que Reddit dit de son propre compteur, quand il le dit.
+
+    Les deux en-têtes sont des flottants en texte. Absents ou illisibles, on
+    rend `None` et l'ordonnanceur reste sur son intervalle de base.
+    """
+    restant = _flottant(entetes.get("X-Ratelimit-Remaining"))
+    remise = _flottant(entetes.get("X-Ratelimit-Reset"))
+    return (int(restant) if restant is not None else None, remise)
+
+
+def _attente(entetes: Any) -> float | None:
+    return _flottant(entetes.get("Retry-After"))
+
+
+def _flottant(valeur: Any) -> float | None:
+    try:
+        return float(valeur)
+    except (TypeError, ValueError):
+        return None
+
+
+assert isinstance(Reddit, type) and hasattr(Reddit, "media")
+_ = Collecteur  # le contrat est importé pour être lu, pas pour être hérité

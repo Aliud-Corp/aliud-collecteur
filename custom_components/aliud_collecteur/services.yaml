@@ -1,0 +1,34 @@
+collecter:
+  name: Collecter
+  description: >-
+    Lance un passage tout de suite, sans attendre l'heure. Le relevé est écrit
+    localement puis déposé sur le stockage objet.
+  fields:
+    sources:
+      name: Sources
+      description: >-
+        Les sources à lire, à la place de celles du fichier. Sert à essayer une
+        configuration sans dépenser cent requêtes.
+      required: false
+      example: ["programming", "devops", "kubernetes"]
+      selector:
+        object:
+    limite:
+      name: Limite
+      description: Ne lire que les N premières sources de la liste.
+      required: false
+      example: 3
+      selector:
+        number:
+          min: 1
+          max: 500
+          mode: box
+    deposer:
+      name: Déposer
+      description: >-
+        Envoyer le relevé sur le stockage objet. À décocher pour un essai qui ne
+        doit rien écrire à distance.
+      required: false
+      default: true
+      selector:
+        boolean:
