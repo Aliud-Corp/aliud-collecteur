@@ -11,6 +11,7 @@ from __future__ import annotations
 import gzip
 import json
 from pathlib import Path
+import pytest
 from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant
@@ -435,3 +436,48 @@ async def test_avant_le_premier_passage_l_etat_est_inconnu(hass):
 
     etat = hass.states.get("sensor.aliud_collecteur_de_medias_last_run")
     assert etat.state == "unknown", "une intégration neuve n'a rien raté"
+
+
+# ── Chaque média doit pouvoir se monter ─────────────────────────────────────
+#
+# Écrit après coup, contre un défaut réel : `DECALAGE_DEFAUT` n'était pas
+# importé, et seul le média `arctic` le lit. Aucun test ne faisait passer ce
+# média, donc la suite était verte et l'intégration levait un `NameError` au
+# premier passage sur la machine. Un constructeur par média est une branche par
+# média, et une branche non parcourue est une branche non testée.
+
+@pytest.mark.parametrize("media", ["arctic", "hackernews", "lobsters", "reddit"])
+async def test_chaque_media_se_monte_avec_ce_que_sa_classe_demande(hass, media):
+    entree = await _monter_medias(
+        hass, Session(), [media], {media: "une-source\n"}
+    )
+    passeur = entree.runtime_data
+    collecteur = passeur._collecteur(media, ["une-source"])
+    assert collecteur.media == media
+    assert [s.nom for s in collecteur.sources()] == ["une-source"]
+
+
+async def test_un_passage_arctic_va_au_bout(hass):
+    publication = {
+        "name": "t3_abc", "title": "un titre", "url": "https://exemple.net/a",
+        "permalink": "/r/programming/comments/abc/x/", "author": "q",
+        "score": 700, "num_comments": 273, "created_utc": 1787700000.0,
+    }
+    session = Session(
+        Reponse(200, {"data": [publication]}), Reponse(200), Reponse(200)
+    )
+    await _monter_medias(hass, session, ["arctic"], {"arctic": "programming\n"})
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["resultat"] == "succes"
+    assert bilan["medias"]["arctic"]["elements"] == 1
+    contenu = json.loads(
+        gzip.decompress(Path(bilan["medias"]["arctic"]["fichier"]).read_bytes())
+    )
+    assert contenu["media"] == "arctic"
+    assert contenu["elements"][0]["points"] == 700
+    # La fenêtre décalée voyage dans la requête, pas seulement dans le code.
+    params = [a for a in session.appels if a["methode"] == "GET"][0]["params"]
+    assert int(params["before"]) < int(__import__("time").time())
+    assert int(params["before"]) - int(params["after"]) == 2 * 86400

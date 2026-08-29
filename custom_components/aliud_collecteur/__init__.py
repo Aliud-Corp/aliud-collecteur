@@ -61,6 +61,7 @@ from .const import (
     CONF_S3_REGION,
     CONF_S3_SECRET_KEY,
     DEBIT_DEFAUT,
+    DECALAGE_DEFAUT,
     DOMAIN,
     DOSSIER,
     FENETRE_DEFAUT,
