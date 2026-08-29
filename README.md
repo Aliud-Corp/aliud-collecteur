@@ -180,7 +180,7 @@ l'attente demandée quand la source l'a dite.
 
 ```sh
 uv venv --python 3.14 .venv
-uv pip install --python .venv/bin/python homeassistant==2026.7.4 pytest-homeassistant-custom-component
+uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassistant-custom-component==0.13.357
 .venv/bin/python -m pytest
 ```
 
