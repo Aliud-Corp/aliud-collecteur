@@ -37,9 +37,15 @@ appliqué.
 
 ## Installation
 
-Le dépôt est privé, donc il ne passe pas par le magasin HACS. Deux chemins.
+**Par HACS**, en dépôt personnalisé de catégorie *Integration*, avec l'adresse
+de ce dépôt. HACS pose ensuite l'entité de mise à jour, qui signale chaque
+version publiée.
 
-**En une commande**, depuis un clone de ce dépôt :
+> HACS ne sait pas lire un dépôt privé — sa documentation est explicite,
+> « Private GitHub repositories can not be used with HACS at all », quel que
+> soit le jeton. Ce dépôt est public pour cette raison-là, et pour aucune autre.
+
+**Sans HACS**, depuis un clone de ce dépôt :
 
 ```sh
 outils/installer.sh
@@ -47,15 +53,13 @@ outils/installer.sh
 
 Il copie le module par SSH sur l'add-on « Advanced SSH & Web Terminal », propose
 le redémarrage, et nomme ce qui manque quand SSH ne répond pas. `--help` liste
-l'hôte, le port et les variables. Rien n'est configuré par le script : les
-identifiants se saisissent à l'écran.
+l'hôte, le port et les variables. Relancé, il met à jour : l'ancien module part
+avant que le neuf arrive, donc un fichier disparu entre deux versions ne traîne
+pas.
 
-**Par HACS**, en dépôt personnalisé de catégorie *Integration*. Un dépôt privé
-demande que le jeton GitHub de HACS porte la portée `repo` ; s'il la refuse, la
-commande ci-dessus ne dépend d'aucun jeton.
-
-Ensuite, **Paramètres → Appareils et services → Ajouter une intégration →
-Aliud**.
+Rien n'est configuré par l'installation : les identifiants se saisissent à
+l'écran, après le redémarrage, dans **Paramètres → Appareils et services →
+Ajouter une intégration → Aliud**.
 
 ## Configuration
 
