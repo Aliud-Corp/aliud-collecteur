@@ -64,6 +64,10 @@ DOSSIER = "aliud_collecteur"
 FICHIER_SOURCES = "sources-{media}.txt"
 SCHEMA_RELEVE = 1
 
+# Vingt passages, soit trois semaines à raison d'un par jour. Assez pour voir
+# une source qui se tait toujours, assez peu pour que l'état reste lisible.
+JOURNAL_MAX = 20
+
 STOCKAGE_VERSION = 1
 STOCKAGE_CLE = f"{DOMAIN}.etat"
 

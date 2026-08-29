@@ -153,6 +153,27 @@ en attributs le nombre d'éléments, les sources muettes et leur motif, les sour
 non lues, le fichier local, la clé déposée, et `depot` ; et l'instant de fin du
 dernier passage.
 
+## Voir ce qui s'est passé
+
+**Paramètres → Appareils et services → Aliud → ⋯ → Télécharger les
+diagnostics.** Le fichier porte la configuration avec ses quatre secrets
+masqués, le dernier passage en détail, et un **journal des vingt derniers
+passages** — une ligne chacun, avec le résultat, le compte d'éléments et les
+sources muettes.
+
+Le journal existe parce que ce qu'on veut savoir d'un collecteur n'est pas ce
+qui vient d'arriver mais la série : combien de passages ont abouti cette
+semaine, quelle source se tait *toujours*. Une ligne de journal ne le dit pas.
+
+Ce qui reste lisible dans le fichier : le point d'entrée, la région, le bucket,
+le préfixe et l'agent déclaré. C'est ce qu'on regarde en premier quand un dépôt
+échoue, et un diagnostic qui masque la moitié du problème oblige à en demander
+un second.
+
+Pour le détail d'un passage en cours, le journal de Home Assistant filtré sur
+`custom_components.aliud_collecteur` — le niveau se règle dans **Paramètres →
+Appareils et services → Aliud → ⋯ → Activer la journalisation de débogage**.
+
 `depot` prend quatre valeurs, distinctes du verdict du passage : `envoye`,
 `non_configure` (aucun stockage saisi), `desactive` (`deposer: false`, ou un
 passage qui n'a rien pu ouvrir — déposer un relevé vide écraserait
@@ -184,7 +205,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Quatre-vingt-deux tests, dont la signature SigV4 recoupée contre le vecteur
+Quatre-vingt-neuf tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**

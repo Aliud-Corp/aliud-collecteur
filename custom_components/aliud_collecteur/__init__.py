@@ -85,6 +85,7 @@ from .const import (
     SEUIL_DE_FREIN,
     SERVICE_COLLECTER,
     SIGNAL_PASSAGE,
+    JOURNAL_MAX,
     STOCKAGE_CLE,
     STOCKAGE_VERSION,
     TENTATIVES_DEFAUT,
@@ -130,6 +131,7 @@ class Passeur:
         self.hass = hass
         self.entry = entry
         self.bilan = Bilan()
+        self.journal: list[dict[str, Any]] = []
         self.en_cours = False
         self._store: Store = Store(hass, STOCKAGE_VERSION, f"{STOCKAGE_CLE}.{entry.entry_id}")
         self._etat: dict[str, Any] = {}
@@ -142,6 +144,7 @@ class Passeur:
         bilan = self._etat.get("bilan")
         if bilan:
             self.bilan = Bilan(**{c: v for c, v in bilan.items() if c in Bilan.__slots__})
+        self.journal = list(self._etat.get("journal") or [])
         self.armer()
 
     def armer(self) -> None:
@@ -338,8 +341,28 @@ class Passeur:
         reprises = dict(self._etat.get("reprises") or {})
         reprises[media] = [f"{media}:{nom}" for nom in non_lues]
         self._etat["reprises"] = reprises
-        self._etat["bilan"] = {c: getattr(bilan, c) for c in Bilan.__slots__}
+        self._etat["bilan"] = self.bilan_en_json()
+
+        # Une ligne par passage, bornée. Ce qu'on veut savoir d'un collecteur
+        # n'est pas ce qui vient d'arriver mais la série : combien de passages
+        # ont abouti cette semaine, quelles sources se taisent toujours. Le
+        # dernier bilan seul ne le dit pas.
+        self.journal = [*self.journal, _ligne_de_journal(bilan)][-JOURNAL_MAX:]
+        self._etat["journal"] = self.journal
         await self._store.async_save(self._etat)
+
+    # ── Ce que les diagnostics lisent ───────────────────────────────────────
+
+    @property
+    def stockage_configure(self) -> bool:
+        return self._stockage_configure()
+
+    @property
+    def reprises_en_attente(self) -> dict[str, list[str]]:
+        return dict(self._etat.get("reprises") or {})
+
+    def bilan_en_json(self) -> dict[str, Any]:
+        return {c: getattr(self.bilan, c) for c in Bilan.__slots__}
 
     # ── Chemins et configuration ────────────────────────────────────────────
 
@@ -359,6 +382,27 @@ class Passeur:
             secret_key=d.get(CONF_S3_SECRET_KEY, ""),
             prefixe=d.get(CONF_S3_PREFIXE, ""),
         )
+
+
+def _ligne_de_journal(bilan: Bilan) -> dict[str, Any]:
+    """Le passage réduit à ce qui se compare d'une ligne à l'autre.
+
+    Les sources muettes gardent leur nom mais perdent leur motif : sur vingt
+    lignes, ce qu'on cherche est laquelle se tait toujours, pas ce qu'elle a
+    répondu ce jour-là. Le motif du dernier passage reste dans `dernier_passage`.
+    """
+    return {
+        "debut": bilan.debut,
+        "secondes": bilan.secondes,
+        "resultat": bilan.resultat,
+        "depot": bilan.depot,
+        "elements": bilan.elements,
+        "sources_lues": bilan.sources_lues,
+        "sources_declarees": bilan.sources_declarees,
+        "muettes": [m["source"] for m in bilan.sources_muettes],
+        "non_lues": list(bilan.sources_non_lues),
+        "erreur": bilan.erreur,
+    }
 
 
 def _verdict(bilan: Bilan) -> str:
