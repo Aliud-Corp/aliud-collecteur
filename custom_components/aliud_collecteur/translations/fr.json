@@ -1,18 +1,6 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Reddit",
-        "description": "Une application enregistrée sur reddit.com/prefs/apps, de type « script » ou « web app ». robots.txt refuse tout agent anonyme, y compris sur les chemins .rss : l'enregistrement est la seule porte.",
-        "data": {
-          "reddit_client_id": "Identifiant du client",
-          "reddit_client_secret": "Secret du client",
-          "reddit_user_agent": "Agent déclaré"
-        },
-        "data_description": {
-          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider."
-        }
-      },
       "stockage": {
         "title": "Stockage objet",
         "description": "Le bucket compatible S3 où le relevé du jour est déposé. Le point d'entrée se lit dans la console du fournisseur, sur le bucket.\n\n**Laisse tous les champs vides tant que le bucket n'existe pas.** La collecte a lieu, le relevé s'écrit sur le disque, et rien n'est envoyé. Le stockage s'ajoute ensuite par « Reconfigurer ».",
@@ -29,15 +17,10 @@
         }
       },
       "reconfigure": {
-        "title": "Reddit",
-        "description": "Changer le client enregistré, ou le laisser tel quel et passer au stockage.",
+        "title": "Médias",
+        "description": "Changer ce que le collecteur lit.",
         "data": {
-          "reddit_client_id": "Identifiant du client",
-          "reddit_client_secret": "Secret du client",
-          "reddit_user_agent": "Agent déclaré"
-        },
-        "data_description": {
-          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider."
+          "medias": "Médias à lire"
         }
       },
       "reconfigure_stockage": {
@@ -54,6 +37,37 @@
         "data_description": {
           "s3_prefixe": "Facultatif. Range les relevés sous un chemin commun, utile quand le bucket sert à plusieurs choses."
         }
+      },
+      "user": {
+        "title": "Médias",
+        "description": "Ce que le collecteur va lire. Trois d'entre eux n'ont besoin d'aucun identifiant.\n\n**Reddit** est le seul qui en exige, et sa porte s'est refermée : reddit.com refuse un client anonyme au niveau réseau. **Arctic Shift** sert les mêmes publications par un tiers qui, lui, l'autorise — avec un décalage de deux jours, le temps que les scores veuillent dire quelque chose.",
+        "data": {
+          "medias": "Médias à lire"
+        }
+      },
+      "reddit": {
+        "title": "Reddit",
+        "description": "Une application enregistrée sur reddit.com/prefs/apps, de type « script » ou « web app ». robots.txt refuse tout agent anonyme, y compris sur les chemins .rss : l'enregistrement est la seule porte.",
+        "data": {
+          "reddit_client_id": "Identifiant du client",
+          "reddit_client_secret": "Secret du client",
+          "reddit_user_agent": "Agent déclaré"
+        },
+        "data_description": {
+          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider."
+        }
+      },
+      "reconfigure_reddit": {
+        "title": "Reddit",
+        "description": "Changer le client enregistré, ou le laisser tel quel.",
+        "data": {
+          "reddit_client_id": "Identifiant du client",
+          "reddit_client_secret": "Secret du client",
+          "reddit_user_agent": "Agent déclaré"
+        },
+        "data_description": {
+          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider."
+        }
       }
     },
     "error": {
@@ -62,7 +76,8 @@
       "reddit_injoignable": "Reddit est injoignable depuis cette installation.",
       "stockage_refuse": "Le stockage a refusé : bucket inexistant, ou clés sans droit dessus.",
       "stockage_injoignable": "Le point d'entrée est injoignable. Vérifier son écriture.",
-      "stockage_incomplet": "Le stockage est à moitié rempli. Les cinq champs, ou aucun — quatre sur cinq est une saisie interrompue, pas une intention."
+      "stockage_incomplet": "Le stockage est à moitié rempli. Les cinq champs, ou aucun — quatre sur cinq est une saisie interrompue, pas une intention.",
+      "aucun_media": "Il faut au moins un média. Sans lui, un passage ne lit rien."
     },
     "abort": {
       "already_configured": "Le collecteur est déjà configuré.",
@@ -85,11 +100,14 @@
           "elements_par_source": "Éléments par source",
           "fenetre": "Fenêtre du classement",
           "releves_gardes": "Relevés gardés localement",
-          "garder_brut": "Garder la charge d'origine"
+          "garder_brut": "Garder la charge d'origine",
+          "decalage_jours": "Décalage (jours)",
+          "fenetre_jours": "Fenêtre (jours)"
         },
         "data_description": {
           "budget_secondes": "Passé ce délai, le relevé sort avec ce qu'il a, les sources non lues sont nommées, et elles repassent en tête au passage suivant.",
-          "garder_brut": "L'archive est brute : couper la charge d'origine allège les fichiers mais ne se répare pas rétroactivement."
+          "garder_brut": "L'archive est brute : couper la charge d'origine allège les fichiers mais ne se répare pas rétroactivement.",
+          "decalage_jours": "Arctic Shift capture une publication à sa création puis la recapture plus tard : à J-0 les scores sont tous à un point, à J-3 ils sont mûrs. Classer la veille reviendrait à classer des zéros."
         }
       }
     }
@@ -125,7 +143,21 @@
         "deposer": {
           "name": "Déposer",
           "description": "Envoyer le relevé sur le stockage objet. Sans effet si aucun stockage n'est configuré."
+        },
+        "medias": {
+          "name": "Médias",
+          "description": "Les médias à lire, à la place de tous ceux configurés."
         }
+      }
+    }
+  },
+  "selector": {
+    "medias": {
+      "options": {
+        "arctic": "Arctic Shift — Reddit, en différé",
+        "hackernews": "Hacker News",
+        "lobsters": "Lobsters",
+        "reddit": "Reddit — demande un client enregistré"
       }
     }
   }

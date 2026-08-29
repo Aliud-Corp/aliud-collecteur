@@ -18,6 +18,21 @@ NOM = "Aliud — collecteur de médias"
 
 PLATEFORMES = ["sensor"]
 
+# Les médias livrés, dans l'ordre où un passage les lit. Reddit est en dernier
+# parce qu'il est le seul à exiger des identifiants, et le seul dont la porte
+# peut se refermer sans prévenir — relevé du 29/08/2026 : reddit.com bloque un
+# client anonyme au niveau réseau, `robots.txt` compris.
+MEDIAS = ("arctic", "hackernews", "lobsters", "reddit")
+MEDIAS_SANS_IDENTIFIANTS = ("arctic", "hackernews", "lobsters")
+
+CONF_MEDIAS = "medias"
+
+# Ce que les trois médias ouverts envoient comme agent. Il se nomme et il porte
+# une adresse : un opérateur qui veut savoir qui le lit doit pouvoir le demander.
+AGENT_PAR_DEFAUT = (
+    "aliud-collecteur/0.3 (+https://github.com/Aliud-Corp/aliud-collecteur)"
+)
+
 # ── Configuration, telle que le config flow la range ────────────────────────
 CONF_REDDIT_CLIENT_ID = "reddit_client_id"
 CONF_REDDIT_CLIENT_SECRET = "reddit_client_secret"
@@ -40,6 +55,8 @@ OPT_TENTATIVES = "tentatives_par_source"
 OPT_BUDGET = "budget_secondes"
 OPT_PAR_SOURCE = "elements_par_source"
 OPT_FENETRE = "fenetre"
+OPT_DECALAGE = "decalage_jours"
+OPT_FENETRE_JOURS = "fenetre_jours"
 OPT_GARDER_BRUT = "garder_brut"
 OPT_RELEVES_GARDES = "releves_gardes"
 
@@ -52,6 +69,13 @@ TENTATIVES_DEFAUT = 3
 BUDGET_DEFAUT = 1800  # trente minutes ; un passage nominal en prend trois
 PAR_SOURCE_DEFAUT = 25
 FENETRE_DEFAUT = "day"
+
+# Arctic Shift capture une publication à sa création puis la recapture plus tard.
+# Mesuré sur r/programming le 29/08/2026 : à J-0, dix-sept publications sur
+# dix-huit sont à un point ; à J-3, le maximum est à 700 points. Classer la
+# veille reviendrait donc à classer des zéros, d'où ces deux jours de décalage.
+DECALAGE_DEFAUT = 2
+FENETRE_JOURS_DEFAUT = 2
 GARDER_BRUT_DEFAUT = True
 RELEVES_GARDES_DEFAUT = 7
 

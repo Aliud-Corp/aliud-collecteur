@@ -1,18 +1,6 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Reddit",
-        "description": "An application registered at reddit.com/prefs/apps, of type \"script\" or \"web app\". robots.txt refuses every anonymous agent, .rss paths included: registration is the only door.",
-        "data": {
-          "reddit_client_id": "Client ID",
-          "reddit_client_secret": "Client secret",
-          "reddit_user_agent": "Declared user agent"
-        },
-        "data_description": {
-          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
-        }
-      },
       "stockage": {
         "title": "Object storage",
         "description": "The S3-compatible bucket the daily report is written to. The endpoint is read from the provider's console, on the bucket itself.\n\n**Leave every field empty if the bucket does not exist yet.** Collection runs, the report is written to disk, and nothing is uploaded. Add the storage later through Reconfigure.",
@@ -29,15 +17,10 @@
         }
       },
       "reconfigure": {
-        "title": "Reddit",
-        "description": "Change the registered client, or leave it as it is and go on to storage.",
+        "title": "Media",
+        "description": "Change what the collector reads.",
         "data": {
-          "reddit_client_id": "Client ID",
-          "reddit_client_secret": "Client secret",
-          "reddit_user_agent": "Declared user agent"
-        },
-        "data_description": {
-          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
+          "medias": "Media to read"
         }
       },
       "reconfigure_stockage": {
@@ -54,6 +37,37 @@
         "data_description": {
           "s3_prefixe": "Optional. Files every report under a common path, useful when the bucket serves more than one purpose."
         }
+      },
+      "user": {
+        "title": "Media",
+        "description": "What the collector will read. Three of them need no credentials at all.\n\n**Reddit** is the only one that does, and its door has closed: reddit.com refuses an anonymous client at the network layer. **Arctic Shift** serves the same posts through a third party that does allow it — two days behind, the time it takes for scores to mean something.",
+        "data": {
+          "medias": "Media to read"
+        }
+      },
+      "reddit": {
+        "title": "Reddit",
+        "description": "An application registered at reddit.com/prefs/apps, of type \"script\" or \"web app\". robots.txt refuses every anonymous agent, .rss paths included: registration is the only door.",
+        "data": {
+          "reddit_client_id": "Client ID",
+          "reddit_client_secret": "Client secret",
+          "reddit_user_agent": "Declared user agent"
+        },
+        "data_description": {
+          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
+        }
+      },
+      "reconfigure_reddit": {
+        "title": "Reddit",
+        "description": "Change the registered client, or leave it as it is.",
+        "data": {
+          "reddit_client_id": "Client ID",
+          "reddit_client_secret": "Client secret",
+          "reddit_user_agent": "Declared user agent"
+        },
+        "data_description": {
+          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
+        }
       }
     },
     "error": {
@@ -62,7 +76,8 @@
       "reddit_injoignable": "Reddit is unreachable from this installation.",
       "stockage_refuse": "Storage refused: no such bucket, or keys without rights on it.",
       "stockage_injoignable": "The endpoint is unreachable. Check its spelling.",
-      "stockage_incomplet": "Storage is half filled in. Either all five fields, or none of them — four out of five is an interrupted entry, not an intention."
+      "stockage_incomplet": "Storage is half filled in. Either all five fields, or none of them — four out of five is an interrupted entry, not an intention.",
+      "aucun_media": "At least one medium is needed. Without one, a run reads nothing."
     },
     "abort": {
       "already_configured": "The collector is already configured.",
@@ -85,11 +100,14 @@
           "elements_par_source": "Items per source",
           "fenetre": "Ranking window",
           "releves_gardes": "Reports kept locally",
-          "garder_brut": "Keep the original payload"
+          "garder_brut": "Keep the original payload",
+          "decalage_jours": "Lag (days)",
+          "fenetre_jours": "Window (days)"
         },
         "data_description": {
           "budget_secondes": "Past this delay the report ships with what it has, unread sources are named, and they move to the front of the queue on the next run.",
-          "garder_brut": "The archive is raw: dropping the original payload makes files smaller and cannot be undone after the fact."
+          "garder_brut": "The archive is raw: dropping the original payload makes files smaller and cannot be undone after the fact.",
+          "decalage_jours": "Arctic Shift captures a post at creation then captures it again later: on day 0 every score is 1, by day 3 they have matured. Ranking yesterday would rank zeros."
         }
       }
     }
@@ -125,7 +143,21 @@
         "deposer": {
           "name": "Upload",
           "description": "Send the report to object storage. Ignored when no storage is configured."
+        },
+        "medias": {
+          "name": "Media",
+          "description": "Media to read, instead of every configured one."
         }
+      }
+    }
+  },
+  "selector": {
+    "medias": {
+      "options": {
+        "arctic": "Arctic Shift — Reddit, delayed",
+        "hackernews": "Hacker News",
+        "lobsters": "Lobsters",
+        "reddit": "Reddit — needs a registered client"
       }
     }
   }

@@ -4,6 +4,17 @@ collecter:
     Lance un passage tout de suite, sans attendre l'heure. Le relevé est écrit
     localement puis déposé sur le stockage objet.
   fields:
+    medias:
+      name: Médias
+      description: >-
+        Les médias à lire, à la place de tous ceux configurés. Sert à essayer un
+        collecteur sans réveiller les autres.
+      required: false
+      example: ["hackernews", "lobsters"]
+      selector:
+        select:
+          multiple: true
+          options: [arctic, hackernews, lobsters, reddit]
     sources:
       name: Sources
       description: >-

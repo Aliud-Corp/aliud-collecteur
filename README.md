@@ -1,39 +1,67 @@
 # Aliud — collecteur de médias
 
 Une intégration Home Assistant qui lit chaque jour les publications les mieux
-classées d'une centaine de sources, en écrit un relevé daté, et le dépose sur un
-stockage objet compatible S3. Reddit est le premier média ; le contrat qui les
-décrit en accueille d'autres sans rouvrir l'ordonnanceur.
+classées de quatre médias, en écrit un relevé daté par média, et le dépose sur un
+stockage objet compatible S3. Le contrat qui décrit un média en accueille
+d'autres sans rouvrir l'ordonnanceur.
 
 L'archive est brute : rien n'est filtré ni jugé à la collecte. Ce qui en est fait
 se décide en aval, sur le bucket.
+
+## Les quatre médias
+
+| Média | Identifiants | Ce qu'il rend |
+|---|---|---|
+| **Arctic Shift** | aucun | Les publications Reddit, servies par un tiers. Décalées de deux jours |
+| **Hacker News** | aucun | La page d'accueil et des recherches, par l'index Algolia. Scores réels, fraîcheur immédiate |
+| **Lobsters** | aucun | `hottest`, `newest`, et les fils d'étiquette, par le JSON public |
+| **Reddit** | client OAuth | En direct. Sa porte s'est refermée — voir ci-dessous |
+
+Chacun a sa liste de sources, son relevé et sa clé de dépôt. Un passage les lit
+l'un après l'autre, jamais en parallèle : ils partagent le budget de temps, et
+deux passages simultanés rendraient le rythme de chacun illisible.
+
+## Reddit a fermé sa porte, et Arctic Shift est le détour
+
+Relevé le 29/08/2026 : `reddit.com` refuse un client anonyme **au niveau réseau**,
+`robots.txt` compris.
+
+> whoa there, pardner! Your request has been blocked due to a network policy. […]
+> If you're running a script or application, please register or sign in with your
+> developer credentials.
+
+`403` sur `top.json`, `403` sur `.rss`. Ce n'est pas une limite de débit : un
+crawl lent reçoit le même refus qu'un crawl rapide. Le rythme n'est pas la
+variable, et il n'y a rien à contourner — le collecteur `reddit` reste livré, pour
+qui dispose d'un client enregistré.
+
+**Arctic Shift** sert les archives publiques de Reddit par sa propre API, dont le
+`robots.txt` est `User-agent: *` puis `Disallow:` — vide, donc tout permis. On ne
+franchit rien : on lit un autre service, qui autorise ce qu'il autorise.
+
+**Son score mûrit, et c'est toute la contrainte.** Il capture une publication à sa
+création puis la recapture plus tard. Mesuré sur r/programming le 29/08/2026 :
+
+| | Publications | Score maximum | Commentaires maximum |
+|---|---|---|---|
+| J-0 | 18 | 8 | 1 |
+| J-3 | 24 | **700** | 273 |
+| J-30 | 41 | 368 | 264 |
+
+Un « top du jour » lu là serait donc un classement de zéros. La fenêtre est
+décalée de deux jours par défaut, et le relevé porte ses deux bornes pour que
+personne ne la prenne pour hier.
 
 ## Ce qu'elle fait
 
 | | |
 |---|---|
-| **Une horloge** | Un passage par jour, à l'heure réglée dans les options. Un service `aliud_collecteur.collecter` le lance à la main |
+| **Une horloge** | Un passage par jour, à l'heure réglée dans les options. Un service `aliud_collecteur.collecter` le lance à la main, sur tous les médias ou sur un seul |
 | **Un rythme tenu** | Un intervalle réglable entre deux requêtes, une gigue bornée, et un frein qui s'applique **avant** le refus, sur les en-têtes de débit de la source |
 | **Un relevé qui dit ses trous** | Sources déclarées, lues, muettes avec leur motif, non lues faute de budget. Un fichier de quarante sources ne se lit pas comme un fichier complet de quarante sources |
-| **Une reprise** | Les sources que le budget n'a pas laissé lire repassent en tête au passage suivant |
-| **Un dépôt daté** | `reddit/2026/08/28/reddit-20260828T063012Z.json.gz`, jamais écrasé, plus une copie `reddit/dernier.json.gz` pour un lecteur en aval |
-
-## La porte est l'enregistrement, pas la discrétion
-
-`reddit.com/robots.txt` déclare `User-agent: *` puis `Disallow: /`, et ce refus
-couvre les chemins `.rss` comme le reste. Ralentir n'y change rien : ce qui lève
-le refus est une application enregistrée sur
-[`reddit.com/prefs/apps`](https://www.reddit.com/prefs/apps). Sans identifiants,
-l'intégration n'émet aucune requête de collecte et le dit à la configuration.
-
-Reddit accorde **100 requêtes par minute** à un client enregistré. Cent sources
-tiennent donc dans une minute de budget. Le débit par défaut, 30 par minute,
-étale un passage sur trois minutes et demie et garde le reste pour les réessais.
-Ce n'est pas de la dissimulation, c'est de la marge.
-
-La réutilisation d'une session de navigateur ou de cookies exportés n'entrera
-jamais ici : un `403` opposé à un client non enregistré est un contrôle d'accès
-appliqué.
+| **Une reprise** | Les sources que le budget n'a pas laissé lire repassent en tête au passage suivant, média par média |
+| **Un dépôt daté** | `hackernews/2026/08/29/hackernews-20260829T063012Z.json.gz`, jamais écrasé, plus une copie `<media>/dernier.json.gz` pour un lecteur en aval |
+| **Un agrégat qui prend le pire** | Un média en échec décide de l'état du capteur. Un capteur vert se lit « tout va bien », et ce serait faux |
 
 ## Installation
 
@@ -63,11 +91,16 @@ Ajouter une intégration → Aliud**.
 
 ## Configuration
 
-Deux écrans, dont les valeurs sont rangées par Home Assistant dans son magasin.
-Rien dans `configuration.yaml`, rien dans `secrets.yaml`, rien en dur.
+Deux ou trois écrans, dont les valeurs sont rangées par Home Assistant dans son
+magasin. Rien dans `configuration.yaml`, rien dans `secrets.yaml`, rien en dur.
 
-**Reddit** — identifiant du client, secret, et l'agent déclaré. Ce dernier n'est
-pas facultatif : un agent générique se fait brider. Forme attendue
+**Médias** — ce que le collecteur va lire. Trois d'entre eux n'ont besoin
+d'aucun identifiant, et l'écran suivant ne s'affiche que si quelqu'un coche
+Reddit : demander une clé pour un média qu'on ne lit pas est une façon sûre de
+bloquer une installation.
+
+**Reddit**, si coché — identifiant du client, secret, et l'agent déclaré. Ce
+dernier n'est pas facultatif : un agent générique se fait brider. Forme attendue
 `plateforme:identifiant:version (by /u/compte)`.
 
 **Stockage objet** — point d'entrée, région, bucket, clés, et un préfixe
@@ -89,15 +122,22 @@ doivent pas ressembler à quinze relevés archivés.
 
 ### La liste des sources
 
-Un fichier texte, une source par ligne, `#` pour commenter :
-`/config/aliud_collecteur/sources-reddit.txt`. Il est écrit au premier passage
-avec cent entrées de départ, puis jamais réécrit — la liste appartient à celui
-qui l'édite. Les préfixes `r/` et les doublons sont ignorés à la lecture.
+Un fichier texte par média, une source par ligne, `#` pour commenter :
+`/config/aliud_collecteur/sources-<media>.txt`. Écrit au premier passage avec sa
+liste de départ, puis jamais réécrit — elle appartient à celui qui l'édite. Les
+doublons sont ignorés à la lecture.
+
+| Média | Ce qu'une ligne veut dire |
+|---|---|
+| `arctic`, `reddit` | Un sous-reddit. Cent au départ ; le préfixe `r/` est toléré |
+| `hackernews` | Une étiquette de l'index — `front_page`, `show_hn`, `ask_hn` — ou `q:<termes>` pour une recherche |
+| `lobsters` | `hottest`, `newest`, ou `t:<etiquette>` |
 
 ### Les options
 
 Heure du passage, requêtes par minute, gigue, tentatives par source, budget d'un
-passage, éléments par source, fenêtre du classement, nombre de relevés gardés
+passage, éléments par source, **décalage et fenêtre en jours** pour Arctic Shift
+et Hacker News, fenêtre du classement pour Reddit, nombre de relevés gardés
 localement, et si la charge d'origine reste dans le fichier.
 
 Le budget mérite un mot : passé ce délai, le relevé sort avec ce qu'il a, les
@@ -108,7 +148,7 @@ sources non lues sont nommées, et elles repassent en tête au passage suivant.
 ```json
 {
   "schema": 1,
-  "media": "reddit",
+  "media": "hackernews",
   "passage": {
     "debut": "2026-08-28T06:30:12+00:00",
     "fin": "2026-08-28T06:33:48+00:00",
@@ -123,7 +163,7 @@ sources non lues sont nommées, et elles repassent en tête au passage suivant.
   },
   "elements": [
     {
-      "media": "reddit", "source": "programming", "id": "t3_abc",
+      "media": "hackernews", "source": "programming", "id": "t3_abc",
       "titre": "…", "url": "…", "permalien": "…", "auteur": "…",
       "points": 1234, "commentaires": 89,
       "cree_le": "2026-08-28T04:12:00+00:00",
@@ -139,10 +179,12 @@ sources non lues sont nommées, et elles repassent en tête au passage suivant.
 ```yaml
 action: aliud_collecteur.collecter
 data:
-  sources: [programming, devops, kubernetes]
+  medias: [lobsters]
+  sources: [hottest]
 ```
 
-Trois sources, un relevé complet en quelques secondes, écrit sous
+`medias` ne réveille que ce qu'on essaie ; sans lui, tous les médias configurés
+passent. Un relevé complet en quelques secondes, écrit sous
 `/config/aliud_collecteur/`. `deposer: false` coupe l'envoi même quand le
 stockage est configuré, ce qui sert à essayer un réglage sans rien écrire à
 distance.
@@ -209,7 +251,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Quatre-vingt-neuf tests, dont la signature SigV4 recoupée contre le vecteur
+Cent quinze tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**

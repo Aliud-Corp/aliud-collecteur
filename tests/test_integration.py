@@ -26,6 +26,7 @@ from custom_components.aliud_collecteur.const import (
 from tests.faux_reseau import Reponse, Session, listing, publication
 
 DONNEES = {
+    "medias": ["reddit"],
     "reddit_client_id": "ID",
     "reddit_client_secret": "SECRET",
     "reddit_user_agent": "aliud:collecteur:0.1.0 (by /u/board)",
@@ -96,7 +97,7 @@ async def test_un_passage_ecrit_le_fichier_local_et_depose_deux_objets(hass):
     assert bilan["sources_lues"] == 2
     assert bilan["erreur"] is None
 
-    fichier = Path(bilan["fichier"])
+    fichier = Path(bilan["medias"]["reddit"]["fichier"])
     assert fichier.exists()
     contenu = json.loads(gzip.decompress(fichier.read_bytes()))
     assert contenu["media"] == "reddit"
@@ -113,7 +114,7 @@ async def test_un_passage_ecrit_le_fichier_local_et_depose_deux_objets(hass):
         "https://s3.example.net/aliud-collecte/archives/reddit/dernier.json.gz"
     )
     assert puts[0]["corps"] == puts[1]["corps"]
-    assert bilan["cle_s3"].startswith("archives/reddit/")
+    assert bilan["medias"]["reddit"]["cle_s3"].startswith("archives/reddit/")
 
 
 async def test_le_disque_survit_a_un_depot_refuse(hass):
@@ -122,7 +123,9 @@ async def test_le_disque_survit_a_un_depot_refuse(hass):
 
     bilan = await _collecter(hass, session)
 
-    assert Path(bilan["fichier"]).exists(), "la collecte ne doit pas être perdue"
+    assert Path(bilan["medias"]["reddit"]["fichier"]).exists(), (
+        "la collecte ne doit pas être perdue"
+    )
     assert bilan["elements"] == 1
     assert "dépôt refusé" in bilan["erreur"]
     assert bilan["resultat"] == "partiel"
@@ -170,9 +173,9 @@ async def test_un_essai_peut_ne_rien_ecrire_a_distance(hass):
 
     bilan = await _collecter(hass, session, deposer=False)
 
-    assert bilan["cle_s3"] == ""
+    assert bilan["medias"]["reddit"]["cle_s3"] == ""
     assert [a for a in session.appels if a["methode"] == "PUT"] == []
-    assert Path(bilan["fichier"]).exists()
+    assert Path(bilan["medias"]["reddit"]["fichier"]).exists()
 
 
 async def test_les_sources_non_lues_repassent_en_tete_au_passage_suivant(hass):
@@ -197,7 +200,9 @@ async def test_les_sources_non_lues_repassent_en_tete_au_passage_suivant(hass):
         bilan = await _collecter(hass, lent)
 
     assert bilan["sources_non_lues"], "le budget devait couper"
-    non_lues = list(bilan["sources_non_lues"])
+    # L'agrégat préfixe par le média ; le nom nu est dans le détail.
+    assert all(n.startswith("reddit:") for n in bilan["sources_non_lues"])
+    non_lues = list(bilan["medias"]["reddit"]["sources_non_lues"])
 
     # Second passage : les non-lues sont demandées en premier.
     session = _session_nominale(3)
@@ -251,7 +256,9 @@ async def test_sans_stockage_le_releve_s_ecrit_et_rien_ne_part(hass):
     assert bilan["elements"] == 2
     assert [a for a in session.appels if a["methode"] == "PUT"] == []
 
-    contenu = json.loads(gzip.decompress(Path(bilan["fichier"]).read_bytes()))
+    contenu = json.loads(
+        gzip.decompress(Path(bilan["medias"]["reddit"]["fichier"]).read_bytes())
+    )
     assert len(contenu["elements"]) == 2
 
 
@@ -270,7 +277,7 @@ async def test_avec_stockage_le_depot_se_dit_envoye(hass):
     await _monter(hass, session, "programming\n")
     bilan = await _collecter(hass, session)
     assert bilan["depot"] == "envoye"
-    assert bilan["cle_s3"].startswith("archives/reddit/")
+    assert bilan["medias"]["reddit"]["cle_s3"].startswith("archives/reddit/")
 
 
 async def test_un_essai_sans_depot_se_distingue_d_un_stockage_absent(hass):
@@ -285,7 +292,7 @@ async def test_un_depot_refuse_porte_son_propre_mot(hass):
     await _monter(hass, session, "programming\n")
     bilan = await _collecter(hass, session)
     assert bilan["depot"] == "refuse"
-    assert Path(bilan["fichier"]).exists()
+    assert Path(bilan["medias"]["reddit"]["fichier"]).exists()
 
 
 async def test_un_passage_qui_n_a_rien_pu_ouvrir_n_ecrase_pas_le_dernier_releve(hass):
@@ -299,3 +306,132 @@ async def test_un_passage_qui_n_a_rien_pu_ouvrir_n_ecrase_pas_le_dernier_releve(
     assert bilan["depot"] == "desactive"
     assert bilan["resultat"] == "echec"
     assert [a for a in session.appels if a["methode"] == "PUT"] == []
+
+
+# ── Plusieurs médias dans un passage ────────────────────────────────────────
+#
+# L'agrégat prend toujours le pire, et c'est le point : un média en échec ne
+# doit pas être noyé par deux qui ont abouti, parce qu'un capteur vert se lit
+# « tout va bien ».
+
+def _hn(points=775):
+    return {"hits": [{"objectID": "49479837", "title": "un titre",
+                      "url": "https://exemple.net/x", "author": "a",
+                      "points": points, "num_comments": 12,
+                      "created_at": "2026-08-28T15:17:09Z"}]}
+
+
+def _lob():
+    return [{"short_id": "xr1eor", "title": "un titre",
+             "url": "https://exemple.net/y",
+             "comments_url": "https://lobste.rs/s/xr1eor/y",
+             "submitter_user": "b", "score": 56, "comment_count": 3,
+             "created_at": "2026-08-28T11:35:15.935-05:00"}]
+
+
+async def _monter_medias(hass, session, medias, sources_par_media):
+    dossier = Path(hass.config.path("aliud_collecteur"))
+    dossier.mkdir(parents=True, exist_ok=True)
+    for media, contenu in sources_par_media.items():
+        (dossier / f"sources-{media}.txt").write_text(contenu, encoding="utf-8")
+
+    entree = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=DOMAIN,
+        data={**DONNEES, "medias": medias},
+        options=OPTIONS,
+    )
+    entree.add_to_hass(hass)
+    with patch(
+        "custom_components.aliud_collecteur.async_get_clientsession",
+        return_value=session,
+    ):
+        assert await hass.config_entries.async_setup(entree.entry_id)
+        await hass.async_block_till_done()
+    return entree
+
+
+async def test_deux_medias_font_deux_releves_et_deux_depots(hass):
+    session = Session(
+        Reponse(200, _hn()), Reponse(200), Reponse(200),      # hackernews + 2 PUT
+        Reponse(200, _lob()), Reponse(200), Reponse(200),     # lobsters + 2 PUT
+    )
+    await _monter_medias(
+        hass, session, ["hackernews", "lobsters"],
+        {"hackernews": "front_page\n", "lobsters": "hottest\n"},
+    )
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["resultat"] == "succes"
+    assert bilan["elements"] == 2
+    assert set(bilan["medias"]) == {"hackernews", "lobsters"}
+    for media in ("hackernews", "lobsters"):
+        assert Path(bilan["medias"][media]["fichier"]).exists()
+        assert bilan["medias"][media]["cle_s3"].startswith(f"archives/{media}/")
+
+    puts = [a["url"] for a in session.appels if a["methode"] == "PUT"]
+    assert len(puts) == 4
+    assert sum("/hackernews/" in u for u in puts) == 2
+    assert sum("/lobsters/" in u for u in puts) == 2
+
+
+async def test_l_agregat_prend_le_pire_des_deux_medias(hass):
+    session = Session(
+        Reponse(200, _hn()), Reponse(200), Reponse(200),   # hackernews : complet
+        Reponse(404),                                       # lobsters : muette
+        Reponse(200), Reponse(200),
+    )
+    await _monter_medias(
+        hass, session, ["hackernews", "lobsters"],
+        {"hackernews": "front_page\n", "lobsters": "hottest\n"},
+    )
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["medias"]["hackernews"]["resultat"] == "succes"
+    assert bilan["medias"]["lobsters"]["resultat"] == "partiel"
+    assert bilan["resultat"] == "partiel", "un média en défaut décide de l'agrégat"
+    # Le nom du média voyage avec la source, sinon « hottest » ne dit pas chez qui.
+    assert bilan["sources_muettes"] == [
+        {"source": "hottest", "raison": bilan["sources_muettes"][0]["raison"],
+         "media": "lobsters"}
+    ]
+
+
+async def test_le_capteur_montre_le_detail_par_media(hass):
+    session = Session(
+        Reponse(200, _hn()), Reponse(200), Reponse(200),
+        Reponse(200, _lob()), Reponse(200), Reponse(200),
+    )
+    await _monter_medias(
+        hass, session, ["hackernews", "lobsters"],
+        {"hackernews": "front_page\n", "lobsters": "hottest\n"},
+    )
+    await _collecter(hass, session)
+
+    etat = hass.states.get("sensor.aliud_collecteur_de_medias_last_run")
+    assert etat.state == "succes"
+    assert set(etat.attributes["medias"]) == {"hackernews", "lobsters"}
+    assert etat.attributes["medias"]["hackernews"]["elements"] == 1
+
+
+async def test_le_service_peut_ne_reveiller_qu_un_media(hass):
+    session = Session(Reponse(200, _hn()), Reponse(200), Reponse(200))
+    await _monter_medias(
+        hass, session, ["hackernews", "lobsters"],
+        {"hackernews": "front_page\n", "lobsters": "hottest\n"},
+    )
+
+    bilan = await _collecter(hass, session, medias=["hackernews"])
+
+    assert set(bilan["medias"]) == {"hackernews"}
+    assert all("lobste.rs" not in a["url"] for a in session.appels)
+
+
+async def test_avant_le_premier_passage_l_etat_est_inconnu(hass):
+    session = Session(Reponse(200, _hn()))
+    await _monter_medias(hass, session, ["hackernews"], {"hackernews": "front_page\n"})
+
+    etat = hass.states.get("sensor.aliud_collecteur_de_medias_last_run")
+    assert etat.state == "unknown", "une intégration neuve n'a rien raté"

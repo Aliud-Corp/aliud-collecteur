@@ -11,6 +11,13 @@ Les deux écrans font un appel réel : une poignée de main Reddit, un `HEAD` su
 le bucket. Une configuration fausse découverte au passage de 06:30 est une
 configuration fausse découverte le lendemain matin, après une nuit sans relevé.
 
+LE PREMIER ÉCRAN CHOISIT LES MÉDIAS, ET C'EST LUI QUI DÉCIDE DE LA SUITE
+Trois des quatre médias n'ont besoin d'aucun identifiant. Reddit est le seul à
+en exiger, et sa porte s'est refermée le 29/08/2026 : reddit.com refuse un client
+anonyme au niveau réseau, `robots.txt` compris. L'écran des identifiants ne
+s'affiche donc que si quelqu'un coche Reddit — sinon il demanderait une clé pour
+un média qu'on ne lit pas.
+
 LE STOCKAGE EST FACULTATIF, ET CE N'EST PAS UNE COMMODITÉ
 Un bucket se provisionne par une chaîne d'infrastructure qui a son propre
 rythme, et le greffon doit pouvoir tourner avant. Le second écran se valide donc
@@ -54,6 +61,7 @@ from .collecteurs import PassageImpossible, TropDeRequetes
 from .collecteurs.reddit import Reddit
 from .const import (
     BUDGET_DEFAUT,
+    CONF_MEDIAS,
     CONF_REDDIT_CLIENT_ID,
     CONF_REDDIT_CLIENT_SECRET,
     CONF_REDDIT_USER_AGENT,
@@ -64,17 +72,23 @@ from .const import (
     CONF_S3_REGION,
     CONF_S3_SECRET_KEY,
     DEBIT_DEFAUT,
+    DECALAGE_DEFAUT,
     DOMAIN,
     FENETRE_DEFAUT,
+    FENETRE_JOURS_DEFAUT,
     GARDER_BRUT_DEFAUT,
     GIGUE_MAX_DEFAUT,
     GIGUE_MIN_DEFAUT,
     HEURE_DEFAUT,
+    MEDIAS,
+    MEDIAS_SANS_IDENTIFIANTS,
     MINUTE_DEFAUT,
     NOM,
     OPT_BUDGET,
     OPT_DEBIT,
+    OPT_DECALAGE,
     OPT_FENETRE,
+    OPT_FENETRE_JOURS,
     OPT_GARDER_BRUT,
     OPT_GIGUE_MAX,
     OPT_GIGUE_MIN,
@@ -92,6 +106,19 @@ _LOGGER = logging.getLogger(__name__)
 
 _TEXTE = TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT))
 _SECRET = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+
+SCHEMA_MEDIAS = vol.Schema(
+    {
+        vol.Required(CONF_MEDIAS, default=list(MEDIAS_SANS_IDENTIFIANTS)): SelectSelector(
+            SelectSelectorConfig(
+                options=list(MEDIAS),
+                multiple=True,
+                mode=SelectSelectorMode.LIST,
+                translation_key="medias",
+            )
+        )
+    }
+)
 
 SCHEMA_REDDIT = vol.Schema(
     {
@@ -139,7 +166,7 @@ SCHEMA_STOCKAGE = _schema_stockage()
 
 
 class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
-    """Deux écrans : le média, puis le stockage."""
+    """Les médias, puis leurs identifiants s'il en faut, puis le stockage."""
 
     VERSION = 1
 
@@ -154,6 +181,24 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
 
         erreurs: dict[str, str] = {}
         if user_input is not None:
+            medias = _medias_retenus(user_input)
+            if not medias:
+                erreurs["base"] = "aucun_media"
+            else:
+                self._donnees[CONF_MEDIAS] = medias
+                if "reddit" in medias:
+                    return await self.async_step_reddit()
+                return await self.async_step_stockage()
+
+        return self.async_show_form(
+            step_id="user", data_schema=SCHEMA_MEDIAS, errors=erreurs
+        )
+
+    async def async_step_reddit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        erreurs: dict[str, str] = {}
+        if user_input is not None:
             erreur = await _essayer_reddit(self.hass, user_input)
             if erreur:
                 erreurs["base"] = erreur
@@ -162,7 +207,7 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_stockage()
 
         return self.async_show_form(
-            step_id="user", data_schema=SCHEMA_REDDIT, errors=erreurs
+            step_id="reddit", data_schema=SCHEMA_REDDIT, errors=erreurs
         )
 
     async def async_step_stockage(
@@ -184,14 +229,37 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             last_step=True,
         )
 
-    # ── Reconfigurer : ajouter le stockage plus tard, ou tourner les clés ────
+    # ── Reconfigurer : changer de médias, ajouter le stockage, tourner une clé ─
     #
     # Un flux de reconfiguration plutôt que des champs dans les options : ce
-    # sont des identifiants, ils vivent dans `data` avec les autres, et ils se
-    # vérifient par un appel réel avant d'être rangés. Les options portent des
-    # réglages, pas des clés.
+    # sont des identifiants et un choix de sources, ils vivent dans `data` avec
+    # le reste, et les identifiants se vérifient par un appel réel avant d'être
+    # rangés. Les options portent des réglages, pas des clés.
 
     async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entree = self._get_reconfigure_entry()
+        erreurs: dict[str, str] = {}
+        if user_input is not None:
+            medias = _medias_retenus(user_input)
+            if not medias:
+                erreurs["base"] = "aucun_media"
+            else:
+                self._donnees = {**entree.data, CONF_MEDIAS: medias}
+                if "reddit" in medias:
+                    return await self.async_step_reconfigure_reddit()
+                return await self.async_step_reconfigure_stockage()
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                SCHEMA_MEDIAS, {CONF_MEDIAS: entree.data.get(CONF_MEDIAS) or []}
+            ),
+            errors=erreurs,
+        )
+
+    async def async_step_reconfigure_reddit(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         entree = self._get_reconfigure_entry()
@@ -201,11 +269,11 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             if erreur:
                 erreurs["base"] = erreur
             else:
-                self._donnees = {**entree.data, **user_input}
+                self._donnees.update(user_input)
                 return await self.async_step_reconfigure_stockage()
 
         return self.async_show_form(
-            step_id="reconfigure",
+            step_id="reconfigure_reddit",
             data_schema=self.add_suggested_values_to_schema(
                 SCHEMA_REDDIT,
                 {
@@ -259,6 +327,17 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
         return FluxDOptions()
 
 
+def _medias_retenus(saisie: dict[str, Any]) -> list[str]:
+    """Les médias cochés, remis dans l'ordre déclaré.
+
+    L'ordre de la saisie est celui des clics ; celui de `MEDIAS` est celui dans
+    lequel un passage les lit. Garder le premier ferait dépendre l'ordre de
+    lecture de la façon dont quelqu'un a coché des cases.
+    """
+    choisis = set(saisie.get(CONF_MEDIAS) or [])
+    return [m for m in MEDIAS if m in choisis]
+
+
 class FluxDOptions(OptionsFlow):
     """L'heure, le débit, et ce qui borne un passage."""
 
@@ -279,6 +358,8 @@ class FluxDOptions(OptionsFlow):
                 vol.Required(OPT_TENTATIVES, default=o.get(OPT_TENTATIVES, TENTATIVES_DEFAUT)): _nombre(1, 10),
                 vol.Required(OPT_BUDGET, default=o.get(OPT_BUDGET, BUDGET_DEFAUT)): _nombre(60, 21600),
                 vol.Required(OPT_PAR_SOURCE, default=o.get(OPT_PAR_SOURCE, PAR_SOURCE_DEFAUT)): _nombre(1, 100),
+                vol.Required(OPT_DECALAGE, default=o.get(OPT_DECALAGE, DECALAGE_DEFAUT)): _nombre(0, 30),
+                vol.Required(OPT_FENETRE_JOURS, default=o.get(OPT_FENETRE_JOURS, FENETRE_JOURS_DEFAUT)): _nombre(1, 30),
                 vol.Required(OPT_FENETRE, default=o.get(OPT_FENETRE, FENETRE_DEFAUT)): SelectSelector(
                     SelectSelectorConfig(
                         options=["hour", "day", "week", "month"],

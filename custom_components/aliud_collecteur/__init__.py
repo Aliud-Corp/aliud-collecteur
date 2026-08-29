@@ -38,10 +38,19 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 
 from . import depot_s3, releve
-from .collecteurs import Source
-from .collecteurs.reddit import SOURCES_PAR_DEFAUT, Reddit
+from .collecteurs import REGISTRE, Source
+from .collecteurs.arctic import SOURCES_PAR_DEFAUT as SOURCES_ARCTIC
+from .collecteurs.arctic import ArcticShift
+from .collecteurs.hackernews import SOURCES_PAR_DEFAUT as SOURCES_HN
+from .collecteurs.hackernews import HackerNews
+from .collecteurs.lobsters import SOURCES_PAR_DEFAUT as SOURCES_LOBSTERS
+from .collecteurs.lobsters import Lobsters
+from .collecteurs.reddit import SOURCES_PAR_DEFAUT as SOURCES_REDDIT
+from .collecteurs.reddit import Reddit
 from .const import (
+    AGENT_PAR_DEFAUT,
     BUDGET_DEFAUT,
+    CONF_MEDIAS,
     CONF_REDDIT_CLIENT_ID,
     CONF_REDDIT_CLIENT_SECRET,
     CONF_REDDIT_USER_AGENT,
@@ -55,6 +64,7 @@ from .const import (
     DOMAIN,
     DOSSIER,
     FENETRE_DEFAUT,
+    FENETRE_JOURS_DEFAUT,
     FICHIER_SOURCES,
     GARDER_BRUT_DEFAUT,
     GIGUE_MAX_DEFAUT,
@@ -63,7 +73,9 @@ from .const import (
     MINUTE_DEFAUT,
     OPT_BUDGET,
     OPT_DEBIT,
+    OPT_DECALAGE,
     OPT_FENETRE,
+    OPT_FENETRE_JOURS,
     OPT_GARDER_BRUT,
     OPT_GIGUE_MAX,
     OPT_GIGUE_MIN,
@@ -86,6 +98,7 @@ from .const import (
     SERVICE_COLLECTER,
     SIGNAL_PASSAGE,
     JOURNAL_MAX,
+    MEDIAS,
     STOCKAGE_CLE,
     STOCKAGE_VERSION,
     TENTATIVES_DEFAUT,
@@ -96,6 +109,7 @@ _LOGGER = logging.getLogger(__name__)
 
 SCHEMA_COLLECTER = vol.Schema(
     {
+        vol.Optional("medias"): vol.All(cv.ensure_list, [vol.In(MEDIAS)]),
         vol.Optional("sources"): vol.All(cv.ensure_list, [cv.string]),
         vol.Optional("limite"): vol.All(vol.Coerce(int), vol.Range(min=1)),
         vol.Optional("deposer", default=True): cv.boolean,
@@ -123,6 +137,9 @@ class Bilan:
     cle_s3: str = ""
     erreur: str | None = None
 
+    def en_json(self) -> dict[str, Any]:
+        return {c: getattr(self, c) for c in Bilan.__slots__}
+
 
 class Passeur:
     """Ce qui tient un passage de bout en bout, et son état entre deux."""
@@ -130,9 +147,10 @@ class Passeur:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
-        self.bilan = Bilan()
+        self.bilans: dict[str, Bilan] = {}
         self.journal: list[dict[str, Any]] = []
         self.en_cours = False
+        self._reprises_par_media: dict[str, list[str]] = {}
         self._store: Store = Store(hass, STOCKAGE_VERSION, f"{STOCKAGE_CLE}.{entry.entry_id}")
         self._etat: dict[str, Any] = {}
         self._defaire_horloge = None
@@ -141,9 +159,11 @@ class Passeur:
 
     async def demarrer(self) -> None:
         self._etat = await self._store.async_load() or {}
-        bilan = self._etat.get("bilan")
-        if bilan:
-            self.bilan = Bilan(**{c: v for c, v in bilan.items() if c in Bilan.__slots__})
+        for media, brut in (self._etat.get("bilans") or {}).items():
+            self.bilans[media] = Bilan(
+                **{c: v for c, v in brut.items() if c in Bilan.__slots__}
+            )
+        self._reprises_par_media = dict(self._etat.get("reprises") or {})
         self.journal = list(self._etat.get("journal") or [])
         self.armer()
 
@@ -174,43 +194,56 @@ class Passeur:
 
     async def collecter(
         self,
+        medias: list[str] | None = None,
         sources: list[str] | None = None,
         limite: int | None = None,
         deposer: bool = True,
-    ) -> Bilan:
-        """Un passage complet. Ne lève jamais : le bilan porte l'échec."""
+    ) -> dict[str, Any]:
+        """Un passage sur chaque média configuré. Ne lève jamais.
+
+        Les médias sont lus l'un après l'autre, jamais en parallèle : ils
+        partagent le budget de temps et la session HTTP, et deux passages
+        simultanés rendraient le rythme de chacun illisible dans le journal.
+        """
         if self.en_cours:
             _LOGGER.warning("aliud_collecteur : un passage est déjà en cours")
-            return self.bilan
+            return self.resume()
         self.en_cours = True
         try:
-            return await self._collecter(sources, limite, deposer)
+            retenus = [m for m in (medias or self.medias) if m in REGISTRE]
+            inconnus = [m for m in (medias or []) if m not in REGISTRE]
+            for m in inconnus:
+                _LOGGER.warning("aliud_collecteur : média inconnu, ignoré : %s", m)
+            if not retenus:
+                _LOGGER.warning("aliud_collecteur : aucun média configuré")
+            for media in retenus:
+                self.bilans[media] = await self._un_media(
+                    media, sources, limite, deposer
+                )
+            await self._retenir()
+            return self.resume()
         finally:
             self.en_cours = False
             async_dispatcher_send(self.hass, SIGNAL_PASSAGE)
 
-    async def _collecter(
-        self, sources: list[str] | None, limite: int | None, deposer: bool
+    async def _un_media(
+        self,
+        media: str,
+        sources: list[str] | None,
+        limite: int | None,
+        deposer: bool,
     ) -> Bilan:
         options = self.entry.options
-        donnees = self.entry.data
-        media = "reddit"
 
         noms = sources or await self.hass.async_add_executor_job(
-            releve.lire_sources, self._chemin_sources(media), SOURCES_PAR_DEFAUT
+            releve.lire_sources,
+            self._chemin_sources(media),
+            _sources_par_defaut(media),
         )
         if limite:
             noms = noms[:limite]
 
-        collecteur = Reddit(
-            client_id=donnees.get(CONF_REDDIT_CLIENT_ID, ""),
-            client_secret=donnees.get(CONF_REDDIT_CLIENT_SECRET, ""),
-            user_agent=donnees.get(CONF_REDDIT_USER_AGENT, ""),
-            noms=noms,
-            par_source=int(options.get(OPT_PAR_SOURCE, PAR_SOURCE_DEFAUT)),
-            fenetre=options.get(OPT_FENETRE, FENETRE_DEFAUT),
-        )
-
+        collecteur = self._collecteur(media, noms)
         ordonnanceur = Ordonnanceur(
             Reglages(
                 debit_par_minute=options.get(OPT_DEBIT, DEBIT_DEFAUT),
@@ -275,8 +308,9 @@ class Passeur:
                 _LOGGER.error("aliud_collecteur : %s", bilan.erreur)
 
         bilan.resultat = _verdict(bilan)
-        self.bilan = bilan
-        await self._retenir(media, resultat.sources_non_lues, bilan)
+        self._reprises_par_media[media] = [
+            f"{media}:{nom}" for nom in resultat.sources_non_lues
+        ]
         _LOGGER.info(
             "aliud_collecteur : %s — %d éléments, %d/%d sources, %.1f s, %s, dépôt %s",
             media,
@@ -288,6 +322,47 @@ class Passeur:
             bilan.depot,
         )
         return bilan
+
+    def _collecteur(self, media: str, noms: list[str]) -> Any:
+        """Le collecteur du média, monté avec ce que sa classe demande.
+
+        Chaque média prend ce qui le concerne et rien d'autre : Reddit ses
+        identifiants, Arctic Shift sa fenêtre décalée, les deux autres leur seul
+        agent. Un constructeur commun obligerait chacun à ignorer les champs des
+        autres, ce qui est la façon la plus sûre d'en oublier un.
+        """
+        d = self.entry.data
+        o = self.entry.options
+        agent = d.get(CONF_REDDIT_USER_AGENT) or AGENT_PAR_DEFAUT
+        par_source = int(o.get(OPT_PAR_SOURCE, PAR_SOURCE_DEFAUT))
+
+        if media == "reddit":
+            return Reddit(
+                client_id=d.get(CONF_REDDIT_CLIENT_ID, ""),
+                client_secret=d.get(CONF_REDDIT_CLIENT_SECRET, ""),
+                user_agent=d.get(CONF_REDDIT_USER_AGENT, ""),
+                noms=noms,
+                par_source=par_source,
+                fenetre=o.get(OPT_FENETRE, FENETRE_DEFAUT),
+            )
+        if media == "arctic":
+            return ArcticShift(
+                agent=agent,
+                noms=noms,
+                par_source=par_source,
+                decalage_jours=int(o.get(OPT_DECALAGE, DECALAGE_DEFAUT)),
+                fenetre_jours=int(o.get(OPT_FENETRE_JOURS, FENETRE_JOURS_DEFAUT)),
+            )
+        if media == "hackernews":
+            return HackerNews(
+                agent=agent,
+                noms=noms,
+                par_source=par_source,
+                fenetre_jours=int(o.get(OPT_FENETRE_JOURS, FENETRE_JOURS_DEFAUT)),
+            )
+        if media == "lobsters":
+            return Lobsters(agent=agent, noms=noms, par_source=par_source)
+        raise ValueError(f"média sans constructeur : {media}")
 
     async def _deposer(
         self, session: Any, media: str, debut: str, octets: bytes
@@ -334,20 +409,43 @@ class Passeur:
 
     # ── L'état gardé entre deux passages ────────────────────────────────────
 
+    @property
+    def medias(self) -> list[str]:
+        """Les médias configurés, dans l'ordre déclaré, jamais dans celui saisi."""
+        choisis = set(self.entry.data.get(CONF_MEDIAS) or [])
+        return [m for m in MEDIAS if m in choisis]
+
+    @property
+    def bilan(self) -> Bilan:
+        """L'agrégat du dernier passage, ce que le capteur montre.
+
+        Un capteur par média multiplierait les entités pour une question qu'on
+        se pose une fois : est-ce que le passage de cette nuit a abouti. Le
+        détail par média voyage en attribut.
+        """
+        return _agreger(list(self.bilans.values()))
+
+    def resume(self) -> dict[str, Any]:
+        """Ce que le service rend : l'agrégat, et le détail par média."""
+        agrege = self.bilan
+        return {
+            **{c: getattr(agrege, c) for c in Bilan.__slots__},
+            "medias": {m: b.en_json() for m, b in self.bilans.items()},
+        }
+
     def _reprises(self, media: str) -> list[str]:
-        return list((self._etat.get("reprises") or {}).get(media) or [])
+        return list(self._reprises_par_media.get(media) or [])
 
-    async def _retenir(self, media: str, non_lues: list[str], bilan: Bilan) -> None:
-        reprises = dict(self._etat.get("reprises") or {})
-        reprises[media] = [f"{media}:{nom}" for nom in non_lues]
-        self._etat["reprises"] = reprises
-        self._etat["bilan"] = self.bilan_en_json()
+    async def _retenir(self) -> None:
+        self._etat["reprises"] = dict(self._reprises_par_media)
+        self._etat["bilans"] = {m: b.en_json() for m, b in self.bilans.items()}
 
-        # Une ligne par passage, bornée. Ce qu'on veut savoir d'un collecteur
-        # n'est pas ce qui vient d'arriver mais la série : combien de passages
-        # ont abouti cette semaine, quelles sources se taisent toujours. Le
+        # Une ligne par média et par passage, bornée. Ce qu'on veut savoir d'un
+        # collecteur n'est pas ce qui vient d'arriver mais la série : combien de
+        # passages ont abouti cette semaine, quelle source se tait toujours. Le
         # dernier bilan seul ne le dit pas.
-        self.journal = [*self.journal, _ligne_de_journal(bilan)][-JOURNAL_MAX:]
+        lignes = [_ligne_de_journal(b) for b in self.bilans.values()]
+        self.journal = [*self.journal, *lignes][-JOURNAL_MAX:]
         self._etat["journal"] = self.journal
         await self._store.async_save(self._etat)
 
@@ -359,10 +457,10 @@ class Passeur:
 
     @property
     def reprises_en_attente(self) -> dict[str, list[str]]:
-        return dict(self._etat.get("reprises") or {})
+        return dict(self._reprises_par_media)
 
     def bilan_en_json(self) -> dict[str, Any]:
-        return {c: getattr(self.bilan, c) for c in Bilan.__slots__}
+        return self.resume()
 
     # ── Chemins et configuration ────────────────────────────────────────────
 
@@ -382,6 +480,63 @@ class Passeur:
             secret_key=d.get(CONF_S3_SECRET_KEY, ""),
             prefixe=d.get(CONF_S3_PREFIXE, ""),
         )
+
+
+SEVERITE_RESULTAT = {RESULTAT_SUCCES: 0, RESULTAT_PARTIEL: 1, RESULTAT_ECHEC: 2}
+SEVERITE_DEPOT = {
+    DEPOT_ENVOYE: 0,
+    DEPOT_DESACTIVE: 1,
+    DEPOT_NON_CONFIGURE: 2,
+    DEPOT_REFUSE: 3,
+}
+
+
+def _sources_par_defaut(media: str) -> str:
+    """La liste livrée d'un média, écrite au premier passage puis jamais relue.
+
+    Arctic Shift hérite de celle de Reddit : ce qui a changé est la porte, pas
+    les sujets.
+    """
+    return {
+        "reddit": SOURCES_REDDIT,
+        "arctic": SOURCES_ARCTIC,
+        "hackernews": SOURCES_HN,
+        "lobsters": SOURCES_LOBSTERS,
+    }.get(media, "")
+
+
+def _agreger(bilans: list[Bilan]) -> Bilan:
+    """Le passage vu d'un seul coup d'œil, et il prend toujours le pire.
+
+    Un média qui a échoué ne doit pas être noyé par deux qui ont abouti : ce
+    qu'on lit sur un capteur vert est « tout va bien », et ce serait faux. Les
+    sources muettes et non lues gardent le nom de leur média, sans quoi
+    « supprime » ne dirait pas chez qui.
+    """
+    if not bilans:
+        return Bilan(media="")
+    pire_resultat = max(bilans, key=lambda b: SEVERITE_RESULTAT.get(b.resultat, 2))
+    pire_depot = max(bilans, key=lambda b: SEVERITE_DEPOT.get(b.depot, 2))
+    erreurs = [f"{b.media} : {b.erreur}" for b in bilans if b.erreur]
+    return Bilan(
+        media=", ".join(b.media for b in bilans),
+        resultat=pire_resultat.resultat,
+        depot=pire_depot.depot,
+        debut=min((b.debut for b in bilans if b.debut), default=""),
+        fin=max((b.fin for b in bilans if b.fin), default=""),
+        secondes=round(sum(b.secondes for b in bilans), 2),
+        elements=sum(b.elements for b in bilans),
+        sources_declarees=sum(b.sources_declarees for b in bilans),
+        sources_lues=sum(b.sources_lues for b in bilans),
+        sources_muettes=[
+            {**m, "media": b.media} for b in bilans for m in b.sources_muettes
+        ],
+        sources_non_lues=[
+            f"{b.media}:{nom}" for b in bilans for nom in b.sources_non_lues
+        ],
+        complet=all(b.complet for b in bilans),
+        erreur=" · ".join(erreurs) or None,
+    )
 
 
 def _ligne_de_journal(bilan: Bilan) -> dict[str, Any]:
@@ -456,12 +611,12 @@ def _enregistrer_le_service(hass: HomeAssistant) -> None:
         if not entrees:
             return {"erreur": "aucune entrée chargée"}
         passeur: Passeur = entrees[0].runtime_data
-        bilan = await passeur.collecter(
+        return await passeur.collecter(
+            medias=appel.data.get("medias"),
             sources=appel.data.get("sources"),
             limite=appel.data.get("limite"),
             deposer=appel.data.get("deposer", True),
         )
-        return {c: getattr(bilan, c) for c in Bilan.__slots__}
 
     hass.services.async_register(
         DOMAIN,

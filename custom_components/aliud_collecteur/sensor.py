@@ -65,7 +65,15 @@ class CapteurDePassage(_Base):
         self._attr_unique_id = f"{entry.entry_id}_passage"
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> str | None:
+        """Sans passage, l'état est inconnu — jamais « échec ».
+
+        Une intégration qui vient d'être ajoutée n'a rien raté ; afficher un
+        échec avant le premier passage ferait chercher une panne qui n'existe
+        pas.
+        """
+        if not self._passeur.bilans:
+            return None
         return self._passeur.bilan.resultat or RESULTAT_ECHEC
 
     @property
@@ -85,6 +93,19 @@ class CapteurDePassage(_Base):
             "cle_s3": b.cle_s3,
             "erreur": b.erreur,
             "en_cours": self._passeur.en_cours,
+            "medias": {
+                nom: {
+                    "resultat": x.resultat,
+                    "depot": x.depot,
+                    "elements": x.elements,
+                    "sources_lues": x.sources_lues,
+                    "sources_declarees": x.sources_declarees,
+                    "muettes": [m["source"] for m in x.sources_muettes],
+                    "cle_s3": x.cle_s3,
+                    "erreur": x.erreur,
+                }
+                for nom, x in self._passeur.bilans.items()
+            },
         }
 
 

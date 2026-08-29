@@ -17,6 +17,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from custom_components.aliud_collecteur.const import DOMAIN
 from tests.faux_reseau import Reponse, Session
 
+MEDIAS = {"medias": ["reddit"]}
 REDDIT = {
     "reddit_client_id": "ID",
     "reddit_client_secret": "SECRET",
@@ -32,6 +33,15 @@ STOCKAGE = {
 }
 
 
+async def _jusqu_a_reddit(hass):
+    """Le flux jusqu'à l'écran des identifiants Reddit, médias cochés."""
+    flux = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert flux["step_id"] == "user"
+    return await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
+
+
 def _session(*reponses):
     """Remplace la session partagée de Home Assistant dans le flux."""
     return patch(
@@ -41,10 +51,8 @@ def _session(*reponses):
 
 
 async def test_les_deux_ecrans_creent_l_entree(hass):
-    flux = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
-    assert flux["step_id"] == "user"
+    flux = await _jusqu_a_reddit(hass)
+    assert flux["step_id"] == "reddit"
 
     with _session(Reponse(200, {"access_token": "j"})):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
@@ -56,7 +64,7 @@ async def test_les_deux_ecrans_creent_l_entree(hass):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], STOCKAGE)
 
     assert flux["type"] is FlowResultType.CREATE_ENTRY
-    assert flux["data"] == {**REDDIT, **STOCKAGE}
+    assert flux["data"] == {**MEDIAS, **REDDIT, **STOCKAGE}
 
 
 @pytest.mark.parametrize(
@@ -68,21 +76,17 @@ async def test_les_deux_ecrans_creent_l_entree(hass):
     ],
 )
 async def test_reddit_refuse_reaffiche_l_ecran_avec_son_motif(hass, reponse, attendu):
-    flux = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    flux = await _jusqu_a_reddit(hass)
     with _session(reponse):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
 
     assert flux["type"] is FlowResultType.FORM
-    assert flux["step_id"] == "user"
+    assert flux["step_id"] == "reddit"
     assert flux["errors"] == {"base": attendu}
 
 
 async def test_reddit_injoignable_est_distingue_d_un_refus(hass):
-    flux = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    flux = await _jusqu_a_reddit(hass)
     with patch(
         "custom_components.aliud_collecteur.config_flow.async_get_clientsession",
         side_effect=OSError("réseau coupé"),
@@ -93,9 +97,7 @@ async def test_reddit_injoignable_est_distingue_d_un_refus(hass):
 
 @pytest.mark.parametrize("code", [403, 404, 500])
 async def test_un_stockage_qui_refuse_reaffiche_le_second_ecran(hass, code):
-    flux = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    flux = await _jusqu_a_reddit(hass)
     with _session(Reponse(200, {"access_token": "j"})):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
 
@@ -124,9 +126,7 @@ async def test_une_seconde_entree_est_refusee(hass):
 # rythme. Ces cas fixent ce qui doit rester possible en attendant.
 
 async def test_un_ecran_de_stockage_vide_cree_quand_meme_l_entree(hass):
-    flux = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    flux = await _jusqu_a_reddit(hass)
     with _session(Reponse(200, {"access_token": "j"})):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
 
@@ -145,9 +145,7 @@ async def test_un_ecran_de_stockage_vide_cree_quand_meme_l_entree(hass):
 
 
 async def test_un_stockage_a_moitie_rempli_est_refuse_avant_tout_appel(hass):
-    flux = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_USER}
-    )
+    flux = await _jusqu_a_reddit(hass)
     with _session(Reponse(200, {"access_token": "j"})):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
 
@@ -173,7 +171,7 @@ async def _entree_sans_stockage(hass):
     entree = MockConfigEntry(
         domain=DOMAIN,
         unique_id=DOMAIN,
-        data={**REDDIT, **{c: "" for c in STOCKAGE}},
+        data={**MEDIAS, **REDDIT, **{c: "" for c in STOCKAGE}},
     )
     entree.add_to_hass(hass)
     return entree
@@ -185,6 +183,8 @@ async def test_la_reconfiguration_ajoute_le_stockage_sans_toucher_a_reddit(hass)
     with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
         flux = await entree.start_reconfigure_flow(hass)
         assert flux["step_id"] == "reconfigure"
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
+        assert flux["step_id"] == "reconfigure_reddit"
 
         with _session(Reponse(200, {"access_token": "j"})):
             flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
@@ -205,12 +205,13 @@ async def test_une_cle_secrete_laissee_vide_garde_celle_deja_rangee(hass):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entree = MockConfigEntry(
-        domain=DOMAIN, unique_id=DOMAIN, data={**REDDIT, **STOCKAGE}
+        domain=DOMAIN, unique_id=DOMAIN, data={**MEDIAS, **REDDIT, **STOCKAGE}
     )
     entree.add_to_hass(hass)
 
     with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
         flux = await entree.start_reconfigure_flow(hass)
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
         with _session(Reponse(200, {"access_token": "j"})):
             flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
         with _session(Reponse(200)):
@@ -227,12 +228,13 @@ async def test_vider_le_stockage_par_reconfiguration_revient_au_disque_seul(hass
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entree = MockConfigEntry(
-        domain=DOMAIN, unique_id=DOMAIN, data={**REDDIT, **STOCKAGE}
+        domain=DOMAIN, unique_id=DOMAIN, data={**MEDIAS, **REDDIT, **STOCKAGE}
     )
     entree.add_to_hass(hass)
 
     with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
         flux = await entree.start_reconfigure_flow(hass)
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
         with _session(Reponse(200, {"access_token": "j"})):
             flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
         session = Session()
