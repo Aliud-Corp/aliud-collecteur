@@ -37,6 +37,16 @@ class Source:
         """L'identifiant stable d'une source, celui qui sert à reprendre."""
         return f"{self.media}:{self.nom}"
 
+    @property
+    def plancher(self) -> int:
+        """Le score en dessous duquel une publication n'entre pas.
+
+        Zéro par défaut, et zéro veut dire « tout entre » : l'archive est brute,
+        et un filtre par défaut contredirait ce qu'elle promet. C'est un réglage
+        qu'on pose source par source, pas un comportement.
+        """
+        return int(self.options.get("plancher") or 0)
+
 
 @dataclass(slots=True)
 class Element:
@@ -143,6 +153,28 @@ class Collecteur(Protocol):
     async def moissonner(self, session: Any, contexte: Any, source: Source) -> Moisson:
         """Une source, une requête. Lève `TropDeRequetes` ou `SourceMuette`."""
         ...
+
+
+# Le séparateur du plancher, et ce n'est pas `:` — il est déjà pris par les
+# formes `q:<termes>` de Hacker News et `t:<etiquette>` de Lobsters. Une
+# grammaire qui se marche dessus produit une source muette que personne ne
+# rattache à une faute de frappe.
+SEPARATEUR_PLANCHER = "@"
+
+
+def decouper_plancher(ligne: str) -> tuple[str, int]:
+    """`programming@200` rend `("programming", 200)`, `programming` rend `(…, 0)`.
+
+    Un plancher illisible est ignoré plutôt que refusé : une source vaut mieux
+    lue sans son filtre que pas lue du tout.
+    """
+    nom, separe, brut = ligne.rpartition(SEPARATEUR_PLANCHER)
+    if not separe:
+        return ligne.strip(), 0
+    try:
+        return nom.strip(), max(0, int(brut.strip()))
+    except ValueError:
+        return ligne.strip(), 0
 
 
 REGISTRE: dict[str, type] = {}

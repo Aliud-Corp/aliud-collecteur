@@ -15,6 +15,7 @@ import pytest
 
 from custom_components.aliud_collecteur.collecteurs import (
     REGISTRE,
+    decouper_plancher,
     Source,
     SourceMuette,
     TropDeRequetes,
@@ -22,6 +23,7 @@ from custom_components.aliud_collecteur.collecteurs import (
 from custom_components.aliud_collecteur.collecteurs.arctic import ArcticShift
 from custom_components.aliud_collecteur.collecteurs.hackernews import HackerNews
 from custom_components.aliud_collecteur.collecteurs.lobsters import Lobsters
+from custom_components.aliud_collecteur.collecteurs.rss import OCTETS_MAX, Rss
 from tests.faux_reseau import Reponse, Session
 
 AGENT = "aliud-collecteur/0.3 (+https://exemple)"
@@ -33,8 +35,8 @@ def _src(media, nom):
 
 # ── Le registre ─────────────────────────────────────────────────────────────
 
-def test_les_quatre_medias_sont_enregistres():
-    assert set(REGISTRE) == {"arctic", "hackernews", "lobsters", "reddit"}
+def test_les_cinq_medias_sont_enregistres():
+    assert set(REGISTRE) == {"rss", "arctic", "hackernews", "lobsters", "reddit"}
     for nom, classe in REGISTRE.items():
         assert classe.media == nom, "un collecteur rangé sous un autre nom que le sien"
 
@@ -246,3 +248,170 @@ async def test_lobsters_borne_ce_qu_il_rend():
     ctx = await collecteur.ouvrir(session)
     moisson = await collecteur.moissonner(session, ctx, _src("lobsters", "hottest"))
     assert len(moisson.elements) == 3
+
+
+# ── Le plancher de score ────────────────────────────────────────────────────
+#
+# Repris de Horizon, qui pose un `min_score` par sous-reddit. Ici il est **à
+# zéro par défaut** : l'archive est brute, et un filtre par défaut contredirait
+# ce que l'ADR 0034 promet. Le séparateur est `@` et non `:`, déjà pris par
+# `q:<termes>` et `t:<etiquette>`.
+
+@pytest.mark.parametrize(
+    "ligne, nom, plancher",
+    [
+        ("programming", "programming", 0),
+        ("programming@200", "programming", 200),
+        ("  programming @ 200 ", "programming", 200),
+        ("q:kubernetes", "q:kubernetes", 0),
+        ("q:kubernetes@50", "q:kubernetes", 50),
+        ("t:devops@20", "t:devops", 20),
+        ("programming@abc", "programming@abc", 0),
+        ("programming@-5", "programming", 0),
+    ],
+)
+def test_le_plancher_se_lit_sans_marcher_sur_les_autres_grammaires(ligne, nom, plancher):
+    assert decouper_plancher(ligne) == (nom, plancher)
+
+
+def test_une_source_sans_plancher_laisse_tout_entrer():
+    assert Lobsters(AGENT, ["hottest"]).sources()[0].plancher == 0
+
+
+def test_le_plancher_declare_voyage_jusqu_a_la_source():
+    sources = ArcticShift(AGENT, ["programming@200", "devops"]).sources()
+    assert [(s.nom, s.plancher) for s in sources] == [("programming", 200), ("devops", 0)]
+
+
+# ── RSS ─────────────────────────────────────────────────────────────────────
+
+ATOM = """<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Un blogue</title>
+  <entry>
+    <title>Un billet</title>
+    <link rel="alternate" href="https://exemple.net/billet"/>
+    <id>tag:exemple.net,2026:1</id>
+    <published>2026-08-28T15:17:09Z</published>
+    <author><name>quelqu-un</name></author>
+  </entry>
+</feed>"""
+
+RSS2 = """<?xml version="1.0"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Un site</title>
+    <item>
+      <title>Une nouvelle</title>
+      <link>https://exemple.net/nouvelle</link>
+      <guid>https://exemple.net/nouvelle</guid>
+      <pubDate>Thu, 28 Aug 2026 11:35:15 -0500</pubDate>
+      <dc:creator>quelqu-une</dc:creator>
+    </item>
+  </channel>
+</rss>"""
+
+
+class ReponseFlux:
+    """Une réponse dont le corps se lit par morceaux, comme aiohttp le fait."""
+
+    def __init__(self, status=200, corps=b"", morceau=65536):
+        self.status = status
+        self.headers = {}
+        self._corps = corps
+        self._morceau = morceau
+        self.content = self
+
+    async def iter_chunked(self, taille):
+        for i in range(0, len(self._corps), self._morceau):
+            yield self._corps[i : i + self._morceau]
+
+    async def text(self):
+        return self._corps.decode("utf-8", "replace")
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+
+class SessionFlux(Session):
+    def get(self, url, params=None, headers=None):
+        return self._servir("GET", url, params=params, entetes=headers or {})
+
+
+async def _flux(corps, nom="essai https://exemple.net/flux.xml", **kw):
+    session = SessionFlux(ReponseFlux(200, corps))
+    collecteur = Rss(AGENT, [nom], **kw)
+    source = collecteur.sources()[0]
+    ctx = await collecteur.ouvrir(session)
+    return await collecteur.moissonner(session, ctx, source), session, source
+
+
+async def test_rss_lit_un_flux_atom():
+    moisson, session, _ = await _flux(ATOM.encode())
+    e = moisson.elements[0]
+    assert e.media == "rss"
+    assert e.titre == "Un billet"
+    assert e.url == e.permalien == "https://exemple.net/billet"
+    assert e.identifiant == "tag:exemple.net,2026:1"
+    assert e.auteur == "quelqu-un"
+    assert e.cree_le == "2026-08-28T15:17:09+00:00"
+    assert e.points == 0, "un flux ne classe pas, et zéro est la valeur exacte"
+
+
+async def test_rss_lit_un_flux_rss2_et_ramene_la_date_en_utc():
+    moisson, _, _ = await _flux(RSS2.encode())
+    e = moisson.elements[0]
+    assert e.titre == "Une nouvelle"
+    assert e.url == "https://exemple.net/nouvelle"
+    assert e.auteur == "quelqu-une"
+    assert e.cree_le == "2026-08-28T16:35:15+00:00"
+
+
+async def test_rss_deduit_le_nom_de_l_hote_quand_il_manque():
+    collecteur = Rss(AGENT, ["https://www.exemple.net/flux.xml"])
+    source = collecteur.sources()[0]
+    assert source.nom == "exemple.net"
+    assert source.options["url"] == "https://www.exemple.net/flux.xml"
+
+
+async def test_rss_refuse_une_charge_trop_grosse_avant_de_l_analyser():
+    enorme = b"<feed>" + b"x" * (OCTETS_MAX + 1)
+    with pytest.raises(SourceMuette) as capture:
+        await _flux(enorme)
+    assert "avant analyse" in str(capture.value)
+
+
+async def test_rss_refuse_ce_qui_n_est_pas_du_xml():
+    with pytest.raises(SourceMuette):
+        await _flux(b"<html><body>page d'erreur</body></html>")
+
+
+async def test_rss_ecarte_une_entree_sans_rien_d_exploitable():
+    creux = ATOM.replace("<title>Un billet</title>", "").replace(
+        '<link rel="alternate" href="https://exemple.net/billet"/>', ""
+    ).replace("<id>tag:exemple.net,2026:1</id>", "")
+    with pytest.raises(SourceMuette):
+        await _flux(creux.encode())
+
+
+async def test_rss_borne_ce_qu_il_rend():
+    plusieurs = ATOM.replace("</feed>", ("<entry><title>x</title>"
+        "<link rel=\"alternate\" href=\"https://exemple.net/x\"/>"
+        "<id>x</id></entry>" * 9) + "</feed>")
+    moisson, _, _ = await _flux(plusieurs.encode(), par_source=3)
+    assert len(moisson.elements) == 3
+
+
+async def test_rss_annonce_ce_qu_il_accepte():
+    _, session, _ = await _flux(ATOM.encode())
+    assert "atom" in session.appels[0]["entetes"]["Accept"]
+    assert session.appels[0]["entetes"]["User-Agent"] == AGENT
+
+
+async def test_rss_accepte_un_flux_vide_sans_le_confondre_avec_une_panne():
+    vide = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>x</title></feed>'
+    moisson, _, _ = await _flux(vide.encode())
+    assert moisson.elements == [], "un flux sans entrée est un flux, pas une panne"

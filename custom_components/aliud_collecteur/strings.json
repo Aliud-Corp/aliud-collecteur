@@ -154,6 +154,7 @@
   "selector": {
     "medias": {
       "options": {
+        "rss": "RSS / Atom — any feed",
         "arctic": "Arctic Shift — Reddit, delayed",
         "hackernews": "Hacker News",
         "lobsters": "Lobsters",

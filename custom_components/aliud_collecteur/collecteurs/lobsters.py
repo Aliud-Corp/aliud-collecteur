@@ -22,7 +22,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from . import Element, Moisson, Source, SourceMuette, TropDeRequetes, enregistrer
+from . import (
+    Element,
+    Moisson,
+    Source,
+    SourceMuette,
+    TropDeRequetes,
+    decouper_plancher,
+    enregistrer,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +63,13 @@ class Lobsters:
         self._par_source = max(1, int(par_source))
 
     def sources(self) -> list[Source]:
-        return [Source(media=self.media, nom=nom) for nom in self._noms]
+        sorties = []
+        for ligne in self._noms:
+            nom, plancher = decouper_plancher(ligne)
+            sorties.append(
+                Source(media=self.media, nom=nom, options={"plancher": plancher})
+            )
+        return sorties
 
     async def ouvrir(self, session: Any) -> Contexte:
         return Contexte(agent=self._agent)

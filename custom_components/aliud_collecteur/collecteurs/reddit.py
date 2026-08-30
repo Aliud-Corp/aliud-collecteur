@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import (
+    decouper_plancher,
     Collecteur,
     Element,
     Moisson,
@@ -181,7 +182,13 @@ class Reddit:
         self._fenetre = fenetre if fenetre in ("hour", "day", "week", "month") else "day"
 
     def sources(self) -> list[Source]:
-        return [Source(media=self.media, nom=nom) for nom in self._noms]
+        sorties = []
+        for ligne in self._noms:
+            nom, plancher = decouper_plancher(ligne)
+            sorties.append(
+                Source(media=self.media, nom=nom, options={"plancher": plancher})
+            )
+        return sorties
 
     async def ouvrir(self, session: Any) -> Contexte:
         """La poignée de main, une fois par passage.

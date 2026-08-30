@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import (
+    decouper_plancher,
     Element,
     Moisson,
     Source,
@@ -86,7 +87,13 @@ class ArcticShift:
         self._plafond = max(1, min(int(plafond_brut), 100))
 
     def sources(self) -> list[Source]:
-        return [Source(media=self.media, nom=nom) for nom in self._noms]
+        sorties = []
+        for ligne in self._noms:
+            nom, plancher = decouper_plancher(ligne)
+            sorties.append(
+                Source(media=self.media, nom=nom, options={"plancher": plancher})
+            )
+        return sorties
 
     async def ouvrir(self, session: Any) -> Contexte:
         """Aucune poignée de main : l'API est ouverte. On fixe la fenêtre.

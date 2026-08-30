@@ -47,6 +47,8 @@ from .collecteurs.lobsters import SOURCES_PAR_DEFAUT as SOURCES_LOBSTERS
 from .collecteurs.lobsters import Lobsters
 from .collecteurs.reddit import SOURCES_PAR_DEFAUT as SOURCES_REDDIT
 from .collecteurs.reddit import Reddit
+from .collecteurs.rss import SOURCES_PAR_DEFAUT as SOURCES_RSS
+from .collecteurs.rss import Rss
 from .const import (
     AGENT_PAR_DEFAUT,
     BUDGET_DEFAUT,
@@ -363,6 +365,8 @@ class Passeur:
             )
         if media == "lobsters":
             return Lobsters(agent=agent, noms=noms, par_source=par_source)
+        if media == "rss":
+            return Rss(agent=agent, noms=noms, par_source=par_source)
         raise ValueError(f"média sans constructeur : {media}")
 
     async def _deposer(
@@ -503,6 +507,7 @@ def _sources_par_defaut(media: str) -> str:
         "arctic": SOURCES_ARCTIC,
         "hackernews": SOURCES_HN,
         "lobsters": SOURCES_LOBSTERS,
+        "rss": SOURCES_RSS,
     }.get(media, "")
 
 

@@ -14,7 +14,7 @@ collecter:
       selector:
         select:
           multiple: true
-          options: [arctic, hackernews, lobsters, reddit]
+          options: [rss, arctic, hackernews, lobsters, reddit]
     sources:
       name: Sources
       description: >-

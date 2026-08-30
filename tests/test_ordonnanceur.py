@@ -50,7 +50,15 @@ class CollecteurFactice:
         self.appels: list[str] = []
 
     def sources(self):
-        return [Source(media=self.media, nom=n) for n in self._scenario]
+        from custom_components.aliud_collecteur.collecteurs import decouper_plancher
+
+        sorties = []
+        for ligne in self._scenario:
+            nom, plancher = decouper_plancher(ligne)
+            sorties.append(
+                Source(media=self.media, nom=nom, options={"plancher": plancher})
+            )
+        return sorties
 
     async def ouvrir(self, session):
         if self._ouverture is not None:
@@ -59,7 +67,9 @@ class CollecteurFactice:
 
     async def moissonner(self, session, contexte, source):
         self.appels.append(source.nom)
-        restants = self._scenario[source.nom]
+        restants = next(
+            v for k, v in self._scenario.items() if k.split("@")[0] == source.nom
+        )
         issue = restants.pop(0) if restants else Moisson([_element(source.nom)])
         if isinstance(issue, Exception):
             raise issue
@@ -176,3 +186,55 @@ def test_un_media_muet_sur_son_debit_laisse_l_intervalle_de_base():
     rythme = Rythme(Reglages(debit_par_minute=30))
     rythme.informer(restant=None, remise_a_zero=None)
     assert rythme.intervalle == pytest.approx(2.0)
+
+
+# ── Le plancher écarte, et il compte ────────────────────────────────────────
+#
+# Zéro par défaut : l'archive est brute. Ce qui est écarté est compté, parce
+# qu'un filtre silencieux est un trou qu'on ne sait pas relire.
+
+def _avec_points(nom: str, points: int) -> Element:
+    e = _element(nom)
+    e.points = points
+    return e
+
+
+class CollecteurNote(CollecteurFactice):
+    """Un média dont chaque source rend trois publications notées 1, 50, 300."""
+
+    async def moissonner(self, session, contexte, source):
+        self.appels.append(source.nom)
+        return Moisson([_avec_points(source.nom, p) for p in (1, 50, 300)])
+
+
+async def _passage_note(lignes, **reglages):
+    collecteur = CollecteurNote({l: [] for l in lignes})
+    ordonnanceur = Ordonnanceur(Reglages(**{**VITE, **reglages}))
+    return await ordonnanceur.passage(collecteur, session=None)
+
+
+async def test_sans_plancher_tout_entre():
+    resultat = await _passage_note(["a"])
+    assert [e.points for e in resultat.elements] == [1, 50, 300]
+    assert resultat.ecartes_par_plancher == 0
+
+
+async def test_un_plancher_ecarte_et_le_relevé_le_compte():
+    resultat = await _passage_note(["a@100"])
+    assert [e.points for e in resultat.elements] == [300]
+    assert resultat.ecartes_par_plancher == 2
+    assert resultat.sources_lues == ["a"], "une source filtrée reste une source lue"
+    assert resultat.complet is True
+
+
+async def test_le_plancher_est_par_source():
+    resultat = await _passage_note(["a@100", "b"])
+    assert resultat.ecartes_par_plancher == 2
+    assert len(resultat.elements) == 4
+
+
+async def test_un_plancher_qui_vide_une_source_ne_la_rend_pas_muette():
+    resultat = await _passage_note(["a@10000"])
+    assert resultat.elements == []
+    assert resultat.sources_muettes == []
+    assert resultat.ecartes_par_plancher == 3

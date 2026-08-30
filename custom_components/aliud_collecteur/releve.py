@@ -48,6 +48,7 @@ def construire(resultat: Resultat, media: str, garder_brut: bool = True) -> dict
             "sources_muettes": resultat.sources_muettes,
             "sources_non_lues": resultat.sources_non_lues,
             "reprises_du_passage_precedent": resultat.reprises,
+            "ecartes_par_plancher": resultat.ecartes_par_plancher,
         },
         "elements": [e.en_json(avec_brut=garder_brut) for e in resultat.elements],
     }

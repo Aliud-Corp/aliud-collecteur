@@ -8,10 +8,11 @@ d'autres sans rouvrir l'ordonnanceur.
 L'archive est brute : rien n'est filtré ni jugé à la collecte. Ce qui en est fait
 se décide en aval, sur le bucket.
 
-## Les quatre médias
+## Les cinq médias
 
 | Média | Identifiants | Ce qu'il rend |
 |---|---|---|
+| **RSS / Atom** | aucun | N'importe quel flux. Aucune porte ne s'y ferme : le publier, c'est dire « lisez-moi en automatique » |
 | **Arctic Shift** | aucun | Les publications Reddit, servies par un tiers. Décalées de deux jours |
 | **Hacker News** | aucun | La page d'accueil et des recherches, par l'index Algolia. Scores réels, fraîcheur immédiate |
 | **Lobsters** | aucun | `hottest`, `newest`, et les fils d'étiquette, par le JSON public |
@@ -129,9 +130,21 @@ doublons sont ignorés à la lecture.
 
 | Média | Ce qu'une ligne veut dire |
 |---|---|
+| `rss` | Une adresse de flux, ou `<nom> <adresse>`. Sans nom, l'hôte sert d'étiquette |
 | `arctic`, `reddit` | Un sous-reddit. Cent au départ ; le préfixe `r/` est toléré |
 | `hackernews` | Une étiquette de l'index — `front_page`, `show_hn`, `ask_hn` — ou `q:<termes>` pour une recherche |
 | `lobsters` | `hottest`, `newest`, ou `t:<etiquette>` |
+
+**Un plancher de score par source**, suffixé par `@` : `programming@200`,
+`front_page@100`, `t:devops@20`. Il vaut **zéro par défaut**, et zéro veut dire
+que tout entre — l'archive est brute, un filtre par défaut contredirait ce
+qu'elle promet. Ce qu'il écarte est compté dans le relevé, sous
+`ecartes_par_plancher` : un filtre silencieux est un trou qu'on ne sait pas
+relire.
+
+Le séparateur est `@` et non `:`, déjà pris par `q:` et `t:`. Un plancher posé
+sur une source RSS la viderait — un flux ne classe pas, ses publications valent
+zéro point — donc n'en pose pas là.
 
 ### Les options
 
@@ -251,7 +264,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Cent vingt tests, dont la signature SigV4 recoupée contre le vecteur
+Cent quarante-trois tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**

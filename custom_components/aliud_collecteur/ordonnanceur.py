@@ -12,6 +12,12 @@ s'étire pour étaler ce qui reste sur la fenêtre annoncée. Un 429 traité pro
 reste un 429 : il coûte une attente imposée, alors que le frein coûte quelques
 secondes choisies.
 
+LE PLANCHER ÉCARTE, ET IL COMPTE CE QU'IL ÉCARTE
+Une source peut déclarer un score minimum. Zéro par défaut, et zéro veut dire
+« tout entre » : l'archive est brute, un filtre par défaut contredirait ce
+qu'elle promet. Quand il y en a un, le relevé porte le nombre de publications
+qu'il a retirées — un filtre silencieux est un trou qu'on ne sait pas relire.
+
 UN RELEVÉ PARTIEL DIT CE QU'IL N'A PAS PU LIRE
 Le budget épuisé ne fait pas échouer le passage. Les sources non lues sont
 nommées dans le résultat, gardées pour le passage suivant, et le relevé porte
@@ -79,6 +85,7 @@ class Resultat:
     sources_muettes: list[dict[str, str]] = field(default_factory=list)
     sources_non_lues: list[str] = field(default_factory=list)
     reprises: list[str] = field(default_factory=list)
+    ecartes_par_plancher: int = 0
     erreur: str | None = None
 
     @property
@@ -195,6 +202,7 @@ class Ordonnanceur:
             )
             if issue.elements is not None:
                 resultat.elements.extend(issue.elements)
+                resultat.ecartes_par_plancher += issue.ecartes
                 resultat.sources_lues.append(source.nom)
             else:
                 resultat.sources_muettes.append(
@@ -243,7 +251,10 @@ class Ordonnanceur:
                 continue
 
             rythme.informer(moisson.restant, moisson.remise_a_zero)
-            return _Issue(moisson.elements, None)
+            if source.plancher <= 0:
+                return _Issue(moisson.elements, None)
+            retenus = [e for e in moisson.elements if e.points >= source.plancher]
+            return _Issue(retenus, None, len(moisson.elements) - len(retenus))
 
         return _Issue(None, derniere)
 
@@ -262,6 +273,7 @@ class _Issue:
 
     elements: list[Element] | None
     raison: str | None
+    ecartes: int = 0
 
 
 def _ordonner(declarees: list[Source], reprises: list[str]) -> list[Source]:

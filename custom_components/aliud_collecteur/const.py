@@ -22,8 +22,8 @@ PLATEFORMES = ["sensor"]
 # parce qu'il est le seul à exiger des identifiants, et le seul dont la porte
 # peut se refermer sans prévenir — relevé du 29/08/2026 : reddit.com bloque un
 # client anonyme au niveau réseau, `robots.txt` compris.
-MEDIAS = ("arctic", "hackernews", "lobsters", "reddit")
-MEDIAS_SANS_IDENTIFIANTS = ("arctic", "hackernews", "lobsters")
+MEDIAS = ("rss", "arctic", "hackernews", "lobsters", "reddit")
+MEDIAS_SANS_IDENTIFIANTS = ("rss", "arctic", "hackernews", "lobsters")
 
 CONF_MEDIAS = "medias"
 
