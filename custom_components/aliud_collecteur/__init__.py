@@ -54,6 +54,7 @@ from .const import (
     BUDGET_DEFAUT,
     CONF_MEDIAS,
     CONF_REDDIT_CLIENT_ID,
+    CONF_REDDIT_COOKIE,
     CONF_REDDIT_CLIENT_SECRET,
     CONF_REDDIT_USER_AGENT,
     CONF_S3_ACCESS_KEY,
@@ -347,6 +348,7 @@ class Passeur:
                 noms=noms,
                 par_source=par_source,
                 fenetre=o.get(OPT_FENETRE, FENETRE_DEFAUT),
+                cookie=d.get(CONF_REDDIT_COOKIE, ""),
             )
         if media == "arctic":
             return ArcticShift(

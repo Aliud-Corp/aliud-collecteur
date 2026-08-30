@@ -1,5 +1,23 @@
 """Reddit, par client enregistré, et jamais autrement.
 
+DEUX PORTES, ET LE COOKIE EST LA SECONDE
+Depuis le 31/08/2026, ce collecteur accepte un cookie de session d'un compte du
+studio, décidé par le board — clause 4 de l'ADR 0034. Il reste préféré de lire
+par client enregistré quand il y en a un : un jeton OAuth ne fait que lire,
+alors qu'un cookie publie, vote et modère.
+
+CE QUE LE COOKIE NE CHANGE PAS : L'AGENT RESTE LE NÔTRE
+Le board a tranché entre deux techniques et a choisi le cookie contre
+l'usurpation d'agent. Ce collecteur envoie donc son agent nommé, avec l'adresse
+du dépôt, cookie ou pas. Si Reddit refuse un agent honnête muni d'un cookie
+valide, c'est un fait à relever, pas quelque chose à contourner en se déguisant.
+
+UNE SESSION TOMBÉE ARRÊTE LE PASSAGE
+En mode cookie, un `401` ou un `403` lève `PassageImpossible` et non
+`SourceMuette` : la session ne reviendra pas d'elle-même, et réessayer cent
+sources sur une porte fermée est la meilleure façon de faire remarquer le compte.
+C'est la troisième condition de la clause 4.
+
 LA PORTE EST L'ENREGISTREMENT, PAS LA DISCRÉTION
 `reddit.com/robots.txt` déclare `User-agent: *` puis `Disallow: /`, et ce refus
 couvre `/r/<sub>/top/.rss` comme le reste. Un flux RSS servi par un hôte qui
@@ -42,6 +60,7 @@ _LOGGER = logging.getLogger(__name__)
 
 JETON_URL = "https://www.reddit.com/api/v1/access_token"
 LISTING_URL = "https://oauth.reddit.com/r/{sub}/top"
+LISTING_COOKIE_URL = "https://www.reddit.com/r/{sub}/top.json"
 
 # Le point de départ, écrit dans `/config/aliud_collecteur/sources-reddit.txt`
 # au premier passage puis jamais réécrit : la liste appartient au board, pas au
@@ -153,10 +172,15 @@ scrum
 
 @dataclass(slots=True)
 class Contexte:
-    """Ce qui dure un passage : le jeton et l'agent qui l'accompagne."""
+    """Ce qui dure un passage : de quoi s'authentifier, et l'agent qui le porte."""
 
-    jeton: str
     agent: str
+    jeton: str = ""
+    cookie: str = ""
+
+    @property
+    def par_cookie(self) -> bool:
+        return not self.jeton and bool(self.cookie)
 
 
 @enregistrer
@@ -173,10 +197,12 @@ class Reddit:
         noms: list[str],
         par_source: int = 25,
         fenetre: str = "day",
+        cookie: str = "",
     ) -> None:
         self._id = client_id
         self._secret = client_secret
         self._agent = user_agent
+        self._cookie = (cookie or "").strip()
         self._noms = noms
         self._par_source = max(1, min(int(par_source), 100))
         self._fenetre = fenetre if fenetre in ("hour", "day", "week", "month") else "day"
@@ -196,16 +222,23 @@ class Reddit:
         Ce qui manque ici arrête le passage entier : cent sources refusées pour
         la même raison ne valent pas cent requêtes.
         """
-        if not self._id or not self._secret:
-            raise PassageImpossible(
-                "reddit : client_id ou client_secret absent. robots.txt refuse "
-                "tout agent non enregistré, y compris sur les chemins .rss."
-            )
         if not self._agent:
             raise PassageImpossible(
                 "reddit : user_agent absent. Un agent générique se fait brider, "
                 "donc il est refusé plutôt que deviné. Forme attendue : "
                 "<plateforme>:<identifiant>:<version> (by /u/<compte>)"
+            )
+
+        # Le client enregistré d'abord : un jeton ne fait que lire, un cookie
+        # publie, vote et modère. On ne dépense pas le second quand le premier
+        # est disponible.
+        if not self._id or not self._secret:
+            if self._cookie:
+                return Contexte(agent=self._agent, cookie=self._cookie)
+            raise PassageImpossible(
+                "reddit : ni client enregistré, ni cookie de session. "
+                "reddit.com refuse un client anonyme au niveau réseau, "
+                "robots.txt compris — il faut l'un des deux."
             )
 
         autorisation = base64.b64encode(f"{self._id}:{self._secret}".encode()).decode()
@@ -241,16 +274,22 @@ class Reddit:
     async def moissonner(
         self, session: Any, contexte: Contexte, source: Source
     ) -> Moisson:
-        url = LISTING_URL.format(sub=source.nom)
+        url = (
+            LISTING_COOKIE_URL if contexte.par_cookie else LISTING_URL
+        ).format(sub=source.nom)
         parametres = {
             "t": self._fenetre,
             "limit": str(self._par_source),
             "raw_json": "1",
         }
-        entetes = {
-            "Authorization": f"bearer {contexte.jeton}",
-            "User-Agent": contexte.agent,
-        }
+        # L'agent reste le nôtre dans les deux modes : le board a choisi le
+        # cookie contre l'usurpation d'agent, pas en plus d'elle.
+        entetes = {"User-Agent": contexte.agent}
+        if contexte.par_cookie:
+            entetes["Cookie"] = contexte.cookie
+            entetes["Accept"] = "application/json"
+        else:
+            entetes["Authorization"] = f"bearer {contexte.jeton}"
         async with session.get(url, params=parametres, headers=entetes) as reponse:
             restant, remise = _debit(reponse.headers)
             if reponse.status == 429:
@@ -258,9 +297,17 @@ class Reddit:
                     f"reddit : r/{source.nom} bridé", attente=_attente(reponse.headers)
                 )
             if reponse.status in (401, 403):
-                # 401 sur une source isolée veut dire jeton expiré en cours de
-                # passage ; il n'y a rien à réessayer sans rouvrir, et rouvrir
-                # est le travail de l'ordonnanceur au passage suivant.
+                if contexte.par_cookie:
+                    # Clause 4 de l'ADR 0034 : une session tombée arrête le
+                    # passage. Elle ne reviendra pas d'elle-même, et réessayer
+                    # cent sources sur une porte fermée fait remarquer le compte.
+                    raise PassageImpossible(
+                        f"reddit : {reponse.status} avec le cookie sur "
+                        f"r/{source.nom}. La session est tombée ou le compte est "
+                        "restreint — le passage s'arrête au lieu d'insister.")
+                # En mode jeton, un 401 sur une source isolée veut dire jeton
+                # expiré en cours de passage ; rouvrir est le travail de
+                # l'ordonnanceur au passage suivant.
                 raise SourceMuette(f"reddit : r/{source.nom} a rendu {reponse.status}")
             if reponse.status == 404:
                 raise SourceMuette(f"reddit : r/{source.nom} n'existe pas")

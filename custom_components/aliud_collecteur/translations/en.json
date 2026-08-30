@@ -47,26 +47,30 @@
       },
       "reddit": {
         "title": "Reddit",
-        "description": "An application registered at reddit.com/prefs/apps, of type \"script\" or \"web app\". robots.txt refuses every anonymous agent, .rss paths included: registration is the only door.",
+        "description": "Two doors, and one is enough.\n\n**A registered client** (reddit.com/prefs/apps) is preferred: a token only reads.\n\n**A session cookie** from a studio account, failing that — allowed by the board on 2026-08-31. It weighs more: it posts, votes and moderates. Paste the raw `Cookie` header value.\n\nThe declared agent is required either way.",
         "data": {
+          "reddit_user_agent": "Declared user agent",
           "reddit_client_id": "Client ID",
           "reddit_client_secret": "Client secret",
-          "reddit_user_agent": "Declared user agent"
+          "reddit_cookie": "Session cookie"
         },
         "data_description": {
-          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
+          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled.",
+          "reddit_cookie": "Leave empty if you have a registered client. A 401 mid-run stops the collector rather than insisting: a fallen session does not come back on its own, and hammering a closed door gets the account noticed."
         }
       },
       "reconfigure_reddit": {
         "title": "Reddit",
-        "description": "Change the registered client, or leave it as it is.",
+        "description": "Two doors, and one is enough.\n\n**A registered client** (reddit.com/prefs/apps) is preferred: a token only reads.\n\n**A session cookie** from a studio account, failing that — allowed by the board on 2026-08-31. It weighs more: it posts, votes and moderates. Paste the raw `Cookie` header value.\n\nThe declared agent is required either way.",
         "data": {
+          "reddit_user_agent": "Declared user agent",
           "reddit_client_id": "Client ID",
           "reddit_client_secret": "Client secret",
-          "reddit_user_agent": "Declared user agent"
+          "reddit_cookie": "Session cookie"
         },
         "data_description": {
-          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
+          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled.",
+          "reddit_cookie": "Leave empty if you have a registered client. A 401 mid-run stops the collector rather than insisting: a fallen session does not come back on its own, and hammering a closed door gets the account noticed."
         }
       }
     },
@@ -77,7 +81,8 @@
       "stockage_refuse": "Storage refused: no such bucket, or keys without rights on it.",
       "stockage_injoignable": "The endpoint is unreachable. Check its spelling.",
       "stockage_incomplet": "Storage is half filled in. Either all five fields, or none of them — four out of five is an interrupted entry, not an intention.",
-      "aucun_media": "At least one medium is needed. Without one, a run reads nothing."
+      "aucun_media": "At least one medium is needed. Without one, a run reads nothing.",
+      "reddit_sans_porte": "Neither a registered client nor a cookie. Reddit refuses an anonymous client at the network layer: one of the two is needed."
     },
     "abort": {
       "already_configured": "The collector is already configured.",

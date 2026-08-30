@@ -16,7 +16,7 @@ se décide en aval, sur le bucket.
 | **Arctic Shift** | aucun | Les publications Reddit, servies par un tiers. Décalées de deux jours |
 | **Hacker News** | aucun | La page d'accueil et des recherches, par l'index Algolia. Scores réels, fraîcheur immédiate |
 | **Lobsters** | aucun | `hottest`, `newest`, et les fils d'étiquette, par le JSON public |
-| **Reddit** | client OAuth | En direct. Sa porte s'est refermée — voir ci-dessous |
+| **Reddit** | client OAuth **ou** cookie de session | En direct. Sa porte s'est refermée au client anonyme — voir ci-dessous |
 
 Chacun a sa liste de sources, son relevé et sa clé de dépôt. Un passage les lit
 l'un après l'autre, jamais en parallèle : ils partagent le budget de temps, et
@@ -36,9 +36,26 @@ crawl lent reçoit le même refus qu'un crawl rapide. Le rythme n'est pas la
 variable, et il n'y a rien à contourner — le collecteur `reddit` reste livré, pour
 qui dispose d'un client enregistré.
 
+Deux voies restent ouvertes.
+
 **Arctic Shift** sert les archives publiques de Reddit par sa propre API, dont le
 `robots.txt` est `User-agent: *` puis `Disallow:` — vide, donc tout permis. On ne
 franchit rien : on lit un autre service, qui autorise ce qu'il autorise.
+
+**Un cookie de session** d'un compte du studio, autorisé par le board le
+31/08/2026 — clause 4 de l'ADR 0034 du dépôt `aliud`. Le collecteur `reddit`
+l'accepte à la place du client enregistré, qui reste préféré : un jeton ne fait
+que lire, un cookie publie, vote et modère.
+
+Ce qui n'est **pas** fait, et c'est un choix : usurper un agent de navigateur.
+Le board a posé les deux techniques et a choisi le cookie. Un compte se connecte
+et le studio répond de ce qu'il lit ; un agent déguisé ne répond de rien, et
+c'est exactement ce que le filtre de Reddit cherche à arrêter. Le collecteur
+envoie donc son agent nommé, cookie ou pas.
+
+Un `401` ou un `403` en cours de passage **arrête** le collecteur au lieu de
+réessayer : une session tombée ne revient pas seule, et insister sur cent
+sources est la meilleure façon de faire remarquer le compte.
 
 **Son score mûrit, et c'est toute la contrainte.** Il capture une publication à sa
 création puis la recapture plus tard. Mesuré sur r/programming le 29/08/2026 :
@@ -264,7 +281,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Cent quarante-trois tests, dont la signature SigV4 recoupée contre le vecteur
+Cent cinquante-trois tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**

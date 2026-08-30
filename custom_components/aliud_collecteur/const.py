@@ -38,6 +38,11 @@ CONF_REDDIT_CLIENT_ID = "reddit_client_id"
 CONF_REDDIT_CLIENT_SECRET = "reddit_client_secret"
 CONF_REDDIT_USER_AGENT = "reddit_user_agent"
 
+# Le cookie de session, autorisé par la clause 4 de l'ADR 0034 depuis le
+# 31/08/2026. Il vaut pour un compte du studio, et il pèse plus lourd qu'un
+# jeton : il publie, vote et modère. Le client enregistré reste préféré.
+CONF_REDDIT_COOKIE = "reddit_cookie"
+
 CONF_S3_ENDPOINT = "s3_endpoint"
 CONF_S3_REGION = "s3_region"
 CONF_S3_BUCKET = "s3_bucket"

@@ -57,12 +57,13 @@ from homeassistant.helpers.selector import (
 )
 
 from . import depot_s3
-from .collecteurs import PassageImpossible, TropDeRequetes
+from .collecteurs import PassageImpossible, Source, SourceMuette, TropDeRequetes
 from .collecteurs.reddit import Reddit
 from .const import (
     BUDGET_DEFAUT,
     CONF_MEDIAS,
     CONF_REDDIT_CLIENT_ID,
+    CONF_REDDIT_COOKIE,
     CONF_REDDIT_CLIENT_SECRET,
     CONF_REDDIT_USER_AGENT,
     CONF_S3_ACCESS_KEY,
@@ -120,11 +121,14 @@ SCHEMA_MEDIAS = vol.Schema(
     }
 )
 
+# Deux portes, et l'agent est exigé dans les deux : Reddit bride un agent
+# générique, et se déguiser en navigateur n'est pas ce que le board a autorisé.
 SCHEMA_REDDIT = vol.Schema(
     {
-        vol.Required(CONF_REDDIT_CLIENT_ID): _TEXTE,
-        vol.Required(CONF_REDDIT_CLIENT_SECRET): _SECRET,
         vol.Required(CONF_REDDIT_USER_AGENT): _TEXTE,
+        vol.Optional(CONF_REDDIT_CLIENT_ID, default=""): _TEXTE,
+        vol.Optional(CONF_REDDIT_CLIENT_SECRET, default=""): _SECRET,
+        vol.Optional(CONF_REDDIT_COOKIE, default=""): _SECRET,
     }
 )
 
@@ -380,17 +384,38 @@ def _nombre(mini: float, maxi: float, pas: float = 1) -> NumberSelector:
 
 
 async def _essayer_reddit(hass: Any, saisie: dict[str, Any]) -> str | None:
-    """Une poignée de main réelle. Rend la clé d'erreur, ou `None`."""
+    """Un appel réel, par la porte que la saisie désigne. Rend la clé, ou `None`.
+
+    En mode cookie, l'essai lit une source réelle : une poignée de main ne
+    prouverait rien puisqu'il n'y en a pas, et un cookie périmé ne se distingue
+    d'un cookie valide qu'en s'en servant.
+    """
+    ident = str(saisie.get(CONF_REDDIT_CLIENT_ID, "")).strip()
+    secret = str(saisie.get(CONF_REDDIT_CLIENT_SECRET, "")).strip()
+    cookie = str(saisie.get(CONF_REDDIT_COOKIE, "")).strip()
+    if not cookie and not (ident and secret):
+        return "reddit_sans_porte"
+
     collecteur = Reddit(
-        client_id=saisie[CONF_REDDIT_CLIENT_ID].strip(),
-        client_secret=saisie[CONF_REDDIT_CLIENT_SECRET].strip(),
-        user_agent=saisie[CONF_REDDIT_USER_AGENT].strip(),
+        client_id=ident,
+        client_secret=secret,
+        user_agent=str(saisie.get(CONF_REDDIT_USER_AGENT, "")).strip(),
         noms=[],
+        cookie=cookie,
+        par_source=1,
     )
     try:
-        await collecteur.ouvrir(async_get_clientsession(hass))
+        session = async_get_clientsession(hass)
+        contexte = await collecteur.ouvrir(session)
+        if contexte.par_cookie:
+            await collecteur.moissonner(
+                session, contexte, Source(media="reddit", nom="programming")
+            )
     except PassageImpossible as exc:
         _LOGGER.debug("aliud_collecteur : reddit refusé (%s)", exc)
+        return "reddit_refuse"
+    except SourceMuette as exc:
+        _LOGGER.debug("aliud_collecteur : reddit muet à l'essai (%s)", exc)
         return "reddit_refuse"
     except TropDeRequetes:
         return "reddit_bride"

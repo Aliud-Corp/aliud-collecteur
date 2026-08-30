@@ -22,6 +22,7 @@ REDDIT = {
     "reddit_client_id": "ID",
     "reddit_client_secret": "SECRET",
     "reddit_user_agent": "aliud:collecteur:0.1.0 (by /u/board)",
+    "reddit_cookie": "",
 }
 STOCKAGE = {
     "s3_endpoint": "https://s3.example.net",

@@ -28,7 +28,7 @@ AGENT = "aliud:collecteur:0.1.0 (by /u/board)"
 def _reddit(**remplacements):
     defauts = dict(
         client_id="ID", client_secret="SECRET", user_agent=AGENT,
-        noms=["programming"], par_source=25,
+        noms=["programming"], par_source=25, cookie="",
     )
     return Reddit(**{**defauts, **remplacements})
 
@@ -180,3 +180,88 @@ def test_la_liste_par_defaut_porte_cent_sources_sans_doublon():
 def test_les_sources_declarees_portent_leur_media():
     sources = _reddit(noms=["a", "b"]).sources()
     assert [s.cle for s in sources] == ["reddit:a", "reddit:b"]
+
+
+# ── Le cookie de session ────────────────────────────────────────────────────
+#
+# Autorisé par la clause 4 de l'ADR 0034 le 31/08/2026. Ces cas tiennent les
+# trois conditions qu'elle pose, et la seule que le board a écartée : le cookie
+# oui, l'usurpation d'agent non.
+
+COOKIE = "reddit_session=abc; token_v2=def"
+
+
+async def test_un_cookie_ouvre_le_passage_sans_poignee_de_main():
+    session = Session()  # aucune réponse posée : une poignée de main lèverait
+    contexte = await _reddit(client_id="", client_secret="", cookie=COOKIE).ouvrir(
+        session
+    )
+    assert session.appels == []
+    assert contexte.par_cookie is True
+    assert contexte.cookie == COOKIE
+
+
+async def test_le_client_enregistre_reste_prefere_au_cookie():
+    session = Session(Reponse(200, {"access_token": "j"}))
+    contexte = await _reddit(cookie=COOKIE).ouvrir(session)
+    assert contexte.par_cookie is False, "un jeton ne fait que lire, un cookie publie"
+    assert contexte.jeton == "j"
+
+
+async def test_sans_client_ni_cookie_le_passage_est_impossible():
+    session = Session()
+    with pytest.raises(PassageImpossible) as capture:
+        await _reddit(client_id="", client_secret="").ouvrir(session)
+    assert "ni client enregistré, ni cookie" in str(capture.value)
+    assert session.appels == []
+
+
+async def test_l_agent_reste_le_notre_en_mode_cookie():
+    session = Session(Reponse(200, listing(publication())))
+    collecteur = _reddit(client_id="", client_secret="", cookie=COOKIE)
+    contexte = await collecteur.ouvrir(session)
+    await collecteur.moissonner(session, contexte, Source("reddit", "programming"))
+
+    entetes = session.appels[0]["entetes"]
+    assert entetes["User-Agent"] == AGENT
+    assert entetes["Cookie"] == COOKIE
+    assert "Authorization" not in entetes
+    assert "Mozilla" not in entetes["User-Agent"], (
+        "le board a choisi le cookie contre l'usurpation d'agent, pas en plus"
+    )
+
+
+async def test_le_mode_cookie_passe_par_le_site_et_non_par_oauth():
+    session = Session(Reponse(200, listing()))
+    collecteur = _reddit(client_id="", client_secret="", cookie=COOKIE)
+    contexte = await collecteur.ouvrir(session)
+    await collecteur.moissonner(session, contexte, Source("reddit", "devops"))
+    assert session.appels[0]["url"] == "https://www.reddit.com/r/devops/top.json"
+
+
+@pytest.mark.parametrize("code", [401, 403])
+async def test_une_session_tombee_arrete_le_passage_au_lieu_d_insister(code):
+    session = Session(Reponse(code, corps="Forbidden"))
+    collecteur = _reddit(client_id="", client_secret="", cookie=COOKIE)
+    contexte = await collecteur.ouvrir(session)
+    with pytest.raises(PassageImpossible) as capture:
+        await collecteur.moissonner(session, contexte, Source("reddit", "a"))
+    assert "s'arrête au lieu d'insister" in str(capture.value)
+
+
+@pytest.mark.parametrize("code", [401, 403])
+async def test_en_mode_jeton_le_meme_code_ne_rend_qu_une_source_muette(code):
+    session = Session(Reponse(200, {"access_token": "j"}), Reponse(code))
+    collecteur = _reddit()
+    contexte = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette):
+        await collecteur.moissonner(session, contexte, Source("reddit", "a"))
+
+
+async def test_un_cookie_lit_les_memes_publications_qu_un_jeton():
+    session = Session(Reponse(200, listing(publication(score=700))))
+    collecteur = _reddit(client_id="", client_secret="", cookie=COOKIE)
+    contexte = await collecteur.ouvrir(session)
+    moisson = await collecteur.moissonner(session, contexte, Source("reddit", "a"))
+    assert moisson.elements[0].points == 700
+    assert moisson.elements[0].media == "reddit"
