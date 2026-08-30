@@ -26,6 +26,7 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_REDDIT_CLIENT_ID,
     CONF_REDDIT_CLIENT_SECRET,
+    CONF_REDDIT_COOKIE,
     CONF_S3_ACCESS_KEY,
     CONF_S3_SECRET_KEY,
     DOSSIER,
@@ -34,6 +35,8 @@ from .const import (
 A_MASQUER = {
     CONF_REDDIT_CLIENT_ID,
     CONF_REDDIT_CLIENT_SECRET,
+    CONF_REDDIT_COOKIE,
+    CONF_REDDIT_COOKIE,
     CONF_S3_ACCESS_KEY,
     CONF_S3_SECRET_KEY,
 }
@@ -52,6 +55,7 @@ async def async_get_config_entry_diagnostics(
         "configuration": async_redact_data(dict(entry.data), A_MASQUER),
         "options": dict(entry.options),
         "stockage_configure": passeur.stockage_configure,
+        "cookies": passeur.cookies,
         "passage_en_cours": passeur.en_cours,
         "dernier_passage": passeur.bilan_en_json(),
         "journal": passeur.journal,

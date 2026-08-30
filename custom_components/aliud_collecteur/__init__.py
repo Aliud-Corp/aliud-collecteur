@@ -30,6 +30,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -37,7 +38,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 
-from . import depot_s3, releve
+from . import cookies, depot_s3, releve
 from .collecteurs import REGISTRE, Source
 from .collecteurs.arctic import SOURCES_PAR_DEFAUT as SOURCES_ARCTIC
 from .collecteurs.arctic import ArcticShift
@@ -102,8 +103,12 @@ from .const import (
     SERVICE_COLLECTER,
     SIGNAL_PASSAGE,
     JOURNAL_MAX,
+    COOKIE_EXPIRE,
     MEDIAS,
+    MEDIAS_A_COOKIE,
     STOCKAGE_CLE,
+    cle_cookie,
+    cle_expiration,
     STOCKAGE_VERSION,
     TENTATIVES_DEFAUT,
 )
@@ -138,6 +143,7 @@ class Bilan:
     complet: bool = False
     fichier: str = ""
     depot: str = DEPOT_NON_CONFIGURE
+    session_tombee: bool = False
     cle_s3: str = ""
     erreur: str | None = None
 
@@ -281,6 +287,7 @@ class Passeur:
             sources_non_lues=resultat.sources_non_lues,
             complet=resultat.complet,
             erreur=resultat.erreur,
+            session_tombee=resultat.session_tombee,
         )
 
         # Le disque d'abord : un dépôt refusé ne doit pas coûter la collecte.
@@ -312,6 +319,12 @@ class Passeur:
                 _LOGGER.error("aliud_collecteur : %s", bilan.erreur)
 
         bilan.resultat = _verdict(bilan)
+        if resultat.session_tombee:
+            # Home Assistant pose lui-même la carte « à reconfigurer » et amène
+            # au formulaire. On ne bricole pas une notification à côté : elle se
+            # ferme et s'oublie, la carte reste tant que le cookie n'est pas
+            # remplacé.
+            self.entry.async_start_reauth(self.hass)
         self._reprises_par_media[media] = [
             f"{media}:{nom}" for nom in resultat.sources_non_lues
         ]
@@ -438,6 +451,7 @@ class Passeur:
         return {
             **{c: getattr(agrege, c) for c in Bilan.__slots__},
             "medias": {m: b.en_json() for m, b in self.bilans.items()},
+            "cookies": self.cookies,
         }
 
     def _reprises(self, media: str) -> list[str]:
@@ -465,6 +479,27 @@ class Passeur:
     @property
     def reprises_en_attente(self) -> dict[str, list[str]]:
         return dict(self._reprises_par_media)
+
+    @property
+    def cookies(self) -> dict[str, dict[str, Any]]:
+        """Où en est chaque session, sans avoir à lancer un passage.
+
+        Lu depuis la configuration à chaque appel plutôt que gardé : une date
+        d'expiration ne bouge pas, mais le jour où on la regarde, si.
+        """
+        sortie = {}
+        for media in MEDIAS_A_COOKIE:
+            if media not in self.medias:
+                continue
+            present = bool(str(self.entry.data.get(cle_cookie(media), "")).strip())
+            expire_le = str(self.entry.data.get(cle_expiration(media), ""))
+            mot, jours = cookies.etat(expire_le, present)
+            sortie[media] = {
+                "etat": mot,
+                "jours_restants": jours,
+                "expire_le": expire_le,
+            }
+        return sortie
 
     def bilan_en_json(self) -> dict[str, Any]:
         return self.resume()
@@ -585,6 +620,20 @@ def _verdict(bilan: Bilan) -> str:
 # ── Ce que Home Assistant appelle ───────────────────────────────────────────
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Un cookie dont la date est passée ne servira pas : autant le dire au
+    # démarrage plutôt qu'au passage de 06:30, qui échouerait en silence
+    # jusqu'à ce que quelqu'un regarde. `ConfigEntryAuthFailed` est ce que
+    # Home Assistant attend pour ouvrir le flux de réauthentification.
+    for media in MEDIAS_A_COOKIE:
+        if media not in (entry.data.get(CONF_MEDIAS) or []):
+            continue
+        present = bool(str(entry.data.get(cle_cookie(media), "")).strip())
+        mot, jours = cookies.etat(str(entry.data.get(cle_expiration(media), "")), present)
+        if mot == COOKIE_EXPIRE:
+            raise ConfigEntryAuthFailed(
+                f"le cookie {media} a expiré il y a {abs(jours or 0)} jour(s)"
+            )
+
     passeur = Passeur(hass, entry)
     await passeur.demarrer()
     entry.runtime_data = passeur

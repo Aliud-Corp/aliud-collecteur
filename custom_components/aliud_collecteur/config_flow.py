@@ -56,7 +56,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from . import depot_s3
+from . import cookies, depot_s3
 from .collecteurs import PassageImpossible, Source, SourceMuette, TropDeRequetes
 from .collecteurs.reddit import Reddit
 from .const import (
@@ -82,7 +82,10 @@ from .const import (
     GIGUE_MIN_DEFAUT,
     HEURE_DEFAUT,
     MEDIAS,
+    MEDIAS_A_COOKIE,
     MEDIAS_SANS_IDENTIFIANTS,
+    cle_cookie,
+    cle_expiration,
     MINUTE_DEFAUT,
     NOM,
     OPT_BUDGET,
@@ -128,9 +131,60 @@ SCHEMA_REDDIT = vol.Schema(
         vol.Required(CONF_REDDIT_USER_AGENT): _TEXTE,
         vol.Optional(CONF_REDDIT_CLIENT_ID, default=""): _TEXTE,
         vol.Optional(CONF_REDDIT_CLIENT_SECRET, default=""): _SECRET,
-        vol.Optional(CONF_REDDIT_COOKIE, default=""): _SECRET,
     }
 )
+
+# Un champ multiligne : un export JSON fait quelques milliers de caractères, et
+# une ligne unique en rendrait la relecture impossible.
+_COLLE = TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT, multiline=True))
+
+
+def _schema_cookies(medias: list[str]) -> vol.Schema:
+    """Un champ par média qui sait lire un cookie, et rien pour les autres."""
+    return vol.Schema(
+        {
+            vol.Optional(cle_cookie(m), default=""): _COLLE
+            for m in MEDIAS_A_COOKIE
+            if m in medias
+        }
+    )
+
+
+def _valider_cookies(saisie: dict[str, Any], medias: list[str]) -> tuple[dict, str]:
+    """Chaque saisie ramenée à son en-tête, avec sa date. Rend (valeurs, erreur).
+
+    Un champ laissé vide efface le cookie rangé : c'est la façon de revenir au
+    client enregistré, et elle ne doit pas demander un geste de plus.
+    """
+    valeurs: dict[str, Any] = {}
+    for media in MEDIAS_A_COOKIE:
+        if media not in medias:
+            continue
+        brut = str(saisie.get(cle_cookie(media), "")).strip()
+        if not brut:
+            valeurs[cle_cookie(media)] = ""
+            valeurs[cle_expiration(media)] = ""
+            continue
+        try:
+            cookie = cookies.lire(brut, media)
+        except cookies.CookieIllisible:
+            return {}, "cookie_illisible"
+        if cookie.manquants:
+            return {}, "cookie_incomplet"
+        valeurs[cle_cookie(media)] = cookie.entete
+        valeurs[cle_expiration(media)] = cookie.expire_le
+    return valeurs, ""
+
+
+def _sans_porte(donnees: dict[str, Any]) -> bool:
+    """Reddit coché sans client enregistré ni cookie : rien ne pourra le lire."""
+    if "reddit" not in (donnees.get(CONF_MEDIAS) or []):
+        return False
+    a_client = bool(
+        str(donnees.get(CONF_REDDIT_CLIENT_ID, "")).strip()
+        and str(donnees.get(CONF_REDDIT_CLIENT_SECRET, "")).strip()
+    )
+    return not a_client and not str(donnees.get(CONF_REDDIT_COOKIE, "")).strip()
 
 # Tout est facultatif : l'écran se valide à vide tant qu'aucun bucket n'existe.
 # Ce qui reste exigé est la cohérence — quatre champs sur cinq remplis est une
@@ -208,10 +262,34 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
                 erreurs["base"] = erreur
             else:
                 self._donnees.update(user_input)
-                return await self.async_step_stockage()
+                return await self.async_step_cookies()
 
         return self.async_show_form(
             step_id="reddit", data_schema=SCHEMA_REDDIT, errors=erreurs
+        )
+
+    async def async_step_cookies(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        medias = self._donnees.get(CONF_MEDIAS) or []
+        if not any(m in medias for m in MEDIAS_A_COOKIE):
+            return await self.async_step_stockage()
+
+        erreurs: dict[str, str] = {}
+        if user_input is not None:
+            valeurs, erreur = _valider_cookies(user_input, medias)
+            if erreur:
+                erreurs["base"] = erreur
+            else:
+                candidat = {**self._donnees, **valeurs}
+                if _sans_porte(candidat):
+                    erreurs["base"] = "reddit_sans_porte"
+                else:
+                    self._donnees = candidat
+                    return await self.async_step_stockage()
+
+        return self.async_show_form(
+            step_id="cookies", data_schema=_schema_cookies(medias), errors=erreurs
         )
 
     async def async_step_stockage(
@@ -274,7 +352,7 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
                 erreurs["base"] = erreur
             else:
                 self._donnees.update(user_input)
-                return await self.async_step_reconfigure_stockage()
+                return await self.async_step_reconfigure_cookies()
 
         return self.async_show_form(
             step_id="reconfigure_reddit",
@@ -286,6 +364,72 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
                 },
             ),
             errors=erreurs,
+        )
+
+    async def async_step_reconfigure_cookies(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        medias = self._donnees.get(CONF_MEDIAS) or []
+        if not any(m in medias for m in MEDIAS_A_COOKIE):
+            return await self.async_step_reconfigure_stockage()
+
+        erreurs: dict[str, str] = {}
+        if user_input is not None:
+            valeurs, erreur = _valider_cookies(user_input, medias)
+            if erreur:
+                erreurs["base"] = erreur
+            else:
+                candidat = {**self._donnees, **valeurs}
+                if _sans_porte(candidat):
+                    erreurs["base"] = "reddit_sans_porte"
+                else:
+                    self._donnees = candidat
+                    return await self.async_step_reconfigure_stockage()
+
+        return self.async_show_form(
+            step_id="reconfigure_cookies",
+            data_schema=_schema_cookies(medias),
+            errors=erreurs,
+            description_placeholders=_etat_des_cookies(
+                self._get_reconfigure_entry().data, medias
+            ),
+        )
+
+    # ── Réauthentification : ce que Home Assistant déclenche tout seul ───────
+    #
+    # Quand une session tombe, l'intégration appelle `async_start_reauth`. Home
+    # Assistant pose alors une carte « à reconfigurer » dans les paramètres et
+    # amène ici. C'est le mécanisme natif, et c'est pour ça qu'on ne bricole pas
+    # une notification à la main : celle-ci se ferme et s'oublie, la carte reste
+    # tant que le cookie n'est pas remplacé.
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> ConfigFlowResult:
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entree = self._get_reauth_entry()
+        medias = list(entree.data.get(CONF_MEDIAS) or [])
+        erreurs: dict[str, str] = {}
+        if user_input is not None:
+            valeurs, erreur = _valider_cookies(user_input, medias)
+            if erreur:
+                erreurs["base"] = erreur
+            else:
+                candidat = {**entree.data, **valeurs}
+                if _sans_porte(candidat):
+                    erreurs["base"] = "reddit_sans_porte"
+                else:
+                    return self.async_update_reload_and_abort(entree, data=candidat)
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=_schema_cookies(medias),
+            errors=erreurs,
+            description_placeholders=_etat_des_cookies(entree.data, medias),
         )
 
     async def async_step_reconfigure_stockage(
@@ -329,6 +473,25 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(entry: ConfigEntry) -> OptionsFlow:
         return FluxDOptions()
+
+
+def _etat_des_cookies(donnees: dict[str, Any], medias: list[str]) -> dict[str, str]:
+    """Ce que l'écran affiche au-dessus des champs : où en est chaque session."""
+    lignes = []
+    for media in MEDIAS_A_COOKIE:
+        if media not in medias:
+            continue
+        present = bool(str(donnees.get(cle_cookie(media), "")).strip())
+        mot, jours = cookies.etat(str(donnees.get(cle_expiration(media), "")), present)
+        detail = {
+            "absent": "aucun cookie",
+            "sans_date": "posé, sans date connue",
+            "valide": f"valide encore {jours} jour(s)",
+            "bientot": f"expire dans {jours} jour(s)",
+            "expire": f"expiré depuis {abs(jours or 0)} jour(s)",
+        }[mot]
+        lignes.append(f"{media} : {detail}")
+    return {"etat": " · ".join(lignes) or "—"}
 
 
 def _medias_retenus(saisie: dict[str, Any]) -> list[str]:
@@ -394,7 +557,10 @@ async def _essayer_reddit(hass: Any, saisie: dict[str, Any]) -> str | None:
     secret = str(saisie.get(CONF_REDDIT_CLIENT_SECRET, "")).strip()
     cookie = str(saisie.get(CONF_REDDIT_COOKIE, "")).strip()
     if not cookie and not (ident and secret):
-        return "reddit_sans_porte"
+        # Rien à vérifier ici : l'écran suivant peut encore fournir un cookie.
+        # C'est lui qui refuse un Reddit sans aucune porte, parce qu'il est le
+        # seul à voir les deux.
+        return None
 
     collecteur = Reddit(
         client_id=ident,

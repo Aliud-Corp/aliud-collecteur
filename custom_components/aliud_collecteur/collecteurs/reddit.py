@@ -51,6 +51,7 @@ from . import (
     Moisson,
     PassageImpossible,
     Source,
+    SessionTombee,
     SourceMuette,
     TropDeRequetes,
     enregistrer,
@@ -301,7 +302,7 @@ class Reddit:
                     # Clause 4 de l'ADR 0034 : une session tombée arrête le
                     # passage. Elle ne reviendra pas d'elle-même, et réessayer
                     # cent sources sur une porte fermée fait remarquer le compte.
-                    raise PassageImpossible(
+                    raise SessionTombee(
                         f"reddit : {reponse.status} avec le cookie sur "
                         f"r/{source.nom}. La session est tombée ou le compte est "
                         "restreint — le passage s'arrête au lieu d'insister.")

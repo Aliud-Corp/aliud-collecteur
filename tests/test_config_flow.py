@@ -22,8 +22,10 @@ REDDIT = {
     "reddit_client_id": "ID",
     "reddit_client_secret": "SECRET",
     "reddit_user_agent": "aliud:collecteur:0.1.0 (by /u/board)",
-    "reddit_cookie": "",
 }
+
+SANS_COOKIE = {"reddit_cookie": ""}
+COOKIE_RANGE = {"reddit_cookie": "", "reddit_cookie_expire": ""}
 STOCKAGE = {
     "s3_endpoint": "https://s3.example.net",
     "s3_region": "gra",
@@ -43,6 +45,14 @@ async def _jusqu_a_reddit(hass):
     return await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
 
 
+async def _passer_les_cookies(hass, flux, saisie=None):
+    """L'écran des cookies, franchi à vide sauf mention contraire."""
+    assert flux["step_id"] in ("cookies", "reconfigure_cookies"), flux.get("step_id")
+    return await hass.config_entries.flow.async_configure(
+        flux["flow_id"], saisie if saisie is not None else SANS_COOKIE
+    )
+
+
 def _session(*reponses):
     """Remplace la session partagée de Home Assistant dans le flux."""
     return patch(
@@ -57,6 +67,7 @@ async def test_les_deux_ecrans_creent_l_entree(hass):
 
     with _session(Reponse(200, {"access_token": "j"})):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+    flux = await _passer_les_cookies(hass, flux)
     assert flux["step_id"] == "stockage"
 
     with _session(Reponse(200)), patch(
@@ -65,7 +76,7 @@ async def test_les_deux_ecrans_creent_l_entree(hass):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], STOCKAGE)
 
     assert flux["type"] is FlowResultType.CREATE_ENTRY
-    assert flux["data"] == {**MEDIAS, **REDDIT, **STOCKAGE}
+    assert flux["data"] == {**MEDIAS, **REDDIT, **COOKIE_RANGE, **STOCKAGE}
 
 
 @pytest.mark.parametrize(
@@ -101,6 +112,7 @@ async def test_un_stockage_qui_refuse_reaffiche_le_second_ecran(hass, code):
     flux = await _jusqu_a_reddit(hass)
     with _session(Reponse(200, {"access_token": "j"})):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+    flux = await _passer_les_cookies(hass, flux)
 
     with _session(Reponse(code)):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], STOCKAGE)
@@ -130,6 +142,7 @@ async def test_un_ecran_de_stockage_vide_cree_quand_meme_l_entree(hass):
     flux = await _jusqu_a_reddit(hass)
     with _session(Reponse(200, {"access_token": "j"})):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+    flux = await _passer_les_cookies(hass, flux)
 
     vide = {c: "" for c in STOCKAGE}
     session = Session()  # aucune réponse posée : un appel lèverait
@@ -149,6 +162,7 @@ async def test_un_stockage_a_moitie_rempli_est_refuse_avant_tout_appel(hass):
     flux = await _jusqu_a_reddit(hass)
     with _session(Reponse(200, {"access_token": "j"})):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+    flux = await _passer_les_cookies(hass, flux)
 
     moitie = {**{c: "" for c in STOCKAGE}, "s3_endpoint": "https://s3.example.net",
               "s3_bucket": "aliud-collecte"}
@@ -172,7 +186,7 @@ async def _entree_sans_stockage(hass):
     entree = MockConfigEntry(
         domain=DOMAIN,
         unique_id=DOMAIN,
-        data={**MEDIAS, **REDDIT, **{c: "" for c in STOCKAGE}},
+        data={**MEDIAS, **REDDIT, **COOKIE_RANGE, **{c: "" for c in STOCKAGE}},
     )
     entree.add_to_hass(hass)
     return entree
@@ -189,6 +203,7 @@ async def test_la_reconfiguration_ajoute_le_stockage_sans_toucher_a_reddit(hass)
 
         with _session(Reponse(200, {"access_token": "j"})):
             flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+        flux = await _passer_les_cookies(hass, flux)
         assert flux["step_id"] == "reconfigure_stockage"
 
         with _session(Reponse(200)):
@@ -206,7 +221,7 @@ async def test_une_cle_secrete_laissee_vide_garde_celle_deja_rangee(hass):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entree = MockConfigEntry(
-        domain=DOMAIN, unique_id=DOMAIN, data={**MEDIAS, **REDDIT, **STOCKAGE}
+        domain=DOMAIN, unique_id=DOMAIN, data={**MEDIAS, **REDDIT, **COOKIE_RANGE, **STOCKAGE}
     )
     entree.add_to_hass(hass)
 
@@ -215,6 +230,7 @@ async def test_une_cle_secrete_laissee_vide_garde_celle_deja_rangee(hass):
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
         with _session(Reponse(200, {"access_token": "j"})):
             flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+        flux = await _passer_les_cookies(hass, flux)
         with _session(Reponse(200)):
             flux = await hass.config_entries.flow.async_configure(
                 flux["flow_id"], {**STOCKAGE, "s3_secret_key": "", "s3_prefixe": "neuf"}
@@ -229,7 +245,7 @@ async def test_vider_le_stockage_par_reconfiguration_revient_au_disque_seul(hass
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entree = MockConfigEntry(
-        domain=DOMAIN, unique_id=DOMAIN, data={**MEDIAS, **REDDIT, **STOCKAGE}
+        domain=DOMAIN, unique_id=DOMAIN, data={**MEDIAS, **REDDIT, **COOKIE_RANGE, **STOCKAGE}
     )
     entree.add_to_hass(hass)
 
@@ -238,6 +254,7 @@ async def test_vider_le_stockage_par_reconfiguration_revient_au_disque_seul(hass
         flux = await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
         with _session(Reponse(200, {"access_token": "j"})):
             flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+        flux = await _passer_les_cookies(hass, flux)
         session = Session()
         with patch(
             "custom_components.aliud_collecteur.config_flow.async_get_clientsession",
@@ -250,3 +267,136 @@ async def test_vider_le_stockage_par_reconfiguration_revient_au_disque_seul(hass
     assert flux["reason"] == "reconfigure_successful"
     assert entree.data["s3_bucket"] == ""
     assert session.appels == []
+
+
+# ── L'écran des cookies ─────────────────────────────────────────────────────
+#
+# Il existe parce qu'un cookie enterré dans l'écran des identifiants Reddit ne
+# se trouve pas, et parce qu'un secret qui expire tout seul doit dire quand.
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+DANS_30_JOURS = (datetime.now(timezone.utc) + timedelta(days=30)).timestamp()
+HIER = (datetime.now(timezone.utc) - timedelta(days=1)).timestamp()
+
+SANS_CLIENT = {**REDDIT, "reddit_client_id": "", "reddit_client_secret": ""}
+
+
+def _export(expire=DANS_30_JOURS):
+    return (
+        '[{"name":"reddit_session","value":"abc","domain":".reddit.com",'
+        f'"expirationDate":{expire}}},'
+        '{"name":"token_v2","value":"def","domain":".reddit.com",'
+        f'"expirationDate":{expire}}}]'
+    )
+
+
+async def test_un_export_json_colle_devient_un_en_tete_et_sa_date(hass):
+    flux = await _jusqu_a_reddit(hass)
+    with _session(Reponse(200, {"access_token": "j"})):
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+
+    flux = await _passer_les_cookies(hass, flux, {"reddit_cookie": _export()})
+    with _session(Reponse(200)), patch(
+        "custom_components.aliud_collecteur.async_setup_entry", return_value=True
+    ):
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], STOCKAGE)
+
+    assert flux["data"]["reddit_cookie"] == "reddit_session=abc; token_v2=def"
+    assert flux["data"]["reddit_cookie_expire"].startswith("20")
+
+
+@pytest.mark.parametrize(
+    "colle, attendu",
+    [
+        ("n'importe quoi", "cookie_illisible"),
+        ('[{"name":"pref","value":"x","domain":".reddit.com"}]', "cookie_incomplet"),
+    ],
+)
+async def test_un_cookie_de_travers_se_dit_a_la_saisie(hass, colle, attendu):
+    flux = await _jusqu_a_reddit(hass)
+    with _session(Reponse(200, {"access_token": "j"})):
+        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
+
+    flux = await hass.config_entries.flow.async_configure(
+        flux["flow_id"], {"reddit_cookie": colle}
+    )
+    assert flux["step_id"] == "cookies"
+    assert flux["errors"] == {"base": attendu}
+
+
+async def test_reddit_sans_client_ni_cookie_est_refuse_a_l_ecran(hass):
+    flux = await _jusqu_a_reddit(hass)
+    with _session(Reponse(200, {"access_token": "j"})):
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], SANS_CLIENT
+        )
+    flux = await hass.config_entries.flow.async_configure(
+        flux["flow_id"], {"reddit_cookie": ""}
+    )
+    assert flux["errors"] == {"base": "reddit_sans_porte"}
+
+
+async def test_un_cookie_seul_suffit_a_ouvrir_reddit(hass):
+    flux = await _jusqu_a_reddit(hass)
+    with _session(Reponse(200, {"access_token": "j"})):
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], SANS_CLIENT
+        )
+    flux = await _passer_les_cookies(hass, flux, {"reddit_cookie": _export()})
+    assert flux["step_id"] == "stockage"
+
+
+# ── La réauthentification ───────────────────────────────────────────────────
+
+async def _entree_avec_cookie(hass, expire_le=""):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entree = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=DOMAIN,
+        data={
+            **MEDIAS,
+            **SANS_CLIENT,
+            "reddit_cookie": "reddit_session=abc; token_v2=def",
+            "reddit_cookie_expire": expire_le,
+            **{c: "" for c in STOCKAGE},
+        },
+    )
+    entree.add_to_hass(hass)
+    return entree
+
+
+async def test_le_flux_de_reauthentification_remplace_le_cookie(hass):
+    entree = await _entree_avec_cookie(hass)
+
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await entree.start_reauth_flow(hass)
+        assert flux["step_id"] == "reauth_confirm"
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"reddit_cookie": _export()}
+        )
+
+    assert flux["type"] is FlowResultType.ABORT
+    assert flux["reason"] == "reauth_successful"
+    assert entree.data["reddit_cookie"] == "reddit_session=abc; token_v2=def"
+    assert entree.data["reddit_cookie_expire"].startswith("20")
+
+
+async def test_la_reauthentification_dit_ou_en_est_la_session(hass):
+    from custom_components.aliud_collecteur.cookies import lire
+
+    entree = await _entree_avec_cookie(hass, lire(_export(HIER), "reddit").expire_le)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await entree.start_reauth_flow(hass)
+    assert "expiré" in flux["description_placeholders"]["etat"]
+
+
+async def test_la_reauthentification_refuse_de_laisser_reddit_sans_porte(hass):
+    entree = await _entree_avec_cookie(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await entree.start_reauth_flow(hass)
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"reddit_cookie": ""}
+        )
+    assert flux["errors"] == {"base": "reddit_sans_porte"}

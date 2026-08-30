@@ -481,3 +481,107 @@ async def test_un_passage_arctic_va_au_bout(hass):
     params = [a for a in session.appels if a["methode"] == "GET"][0]["params"]
     assert int(params["before"]) < int(__import__("time").time())
     assert int(params["before"]) - int(params["after"]) == 2 * 86400
+
+
+# ── Le cookie, vu depuis Home Assistant ─────────────────────────────────────
+#
+# Un secret qui expire tout seul se gère à l'écran ou ne se gère pas : ces cas
+# tiennent ce que l'utilisateur voit et ce que Home Assistant déclenche.
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+DEMAIN = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(timespec="seconds")
+HIER_ISO = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
+DANS_UN_MOIS = (
+    datetime.now(timezone.utc) + timedelta(days=30)
+).isoformat(timespec="seconds")
+
+AVEC_COOKIE = {
+    **{c: v for c, v in DONNEES.items() if not c.startswith("s3_")},
+    **{c: "" for c in DONNEES if c.startswith("s3_")},
+    "reddit_client_id": "",
+    "reddit_client_secret": "",
+    "reddit_cookie": "reddit_session=abc; token_v2=def",
+}
+
+
+async def _monter_cookie(hass, session, expire_le):
+    dossier = Path(hass.config.path("aliud_collecteur"))
+    dossier.mkdir(parents=True, exist_ok=True)
+    (dossier / "sources-reddit.txt").write_text("programming\n", encoding="utf-8")
+    entree = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=DOMAIN,
+        data={**AVEC_COOKIE, "reddit_cookie_expire": expire_le},
+        options=OPTIONS,
+    )
+    entree.add_to_hass(hass)
+    with patch(
+        "custom_components.aliud_collecteur.async_get_clientsession",
+        return_value=session,
+    ):
+        charge = await hass.config_entries.async_setup(entree.entry_id)
+        await hass.async_block_till_done()
+    return entree, charge
+
+
+@pytest.mark.parametrize(
+    "expire_le, attendu",
+    [(DANS_UN_MOIS, "valide"), (DEMAIN, "bientot"), ("", "sans_date")],
+)
+async def test_le_capteur_dit_ou_en_est_la_session(hass, expire_le, attendu):
+    session = _session_nominale(1, puts=[])
+    await _monter_cookie(hass, session, expire_le)
+    await _collecter(hass, session)
+
+    etat = hass.states.get("sensor.aliud_collecteur_de_medias_last_run")
+    assert etat.attributes["cookies"]["reddit"]["etat"] == attendu
+
+
+async def test_un_cookie_expire_empeche_le_chargement_et_demande_le_formulaire(hass):
+    _, charge = await _monter_cookie(hass, Session(), HIER_ISO)
+    assert charge is False, "un cookie périmé ne sert à rien, autant le dire au départ"
+    flux = [
+        f for f in hass.config_entries.flow.async_progress()
+        if f["handler"] == DOMAIN
+    ]
+    assert flux and flux[0]["context"]["source"] == "reauth"
+
+
+async def test_une_session_tombee_en_vol_ouvre_le_formulaire(hass):
+    # 403 sur la première source : la session est tombée pendant le passage.
+    session = Session(Reponse(403, corps="Forbidden"))
+    entree, _ = await _monter_cookie(hass, session, DANS_UN_MOIS)
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["medias"]["reddit"]["session_tombee"] is True
+    assert bilan["resultat"] == "echec"
+    flux = [
+        f for f in hass.config_entries.flow.async_progress()
+        if f["handler"] == DOMAIN and f["context"]["source"] == "reauth"
+    ]
+    assert flux, "Home Assistant doit poser la carte « à reconfigurer »"
+
+
+async def test_une_session_tombee_n_insiste_pas_sur_les_autres_sources(hass):
+    dossier = Path(hass.config.path("aliud_collecteur"))
+    dossier.mkdir(parents=True, exist_ok=True)
+    (dossier / "sources-reddit.txt").write_text("a\nb\nc\n", encoding="utf-8")
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN,
+        data={**AVEC_COOKIE, "reddit_cookie_expire": DANS_UN_MOIS}, options=OPTIONS,
+    )
+    entree.add_to_hass(hass)
+    session = Session(Reponse(403))
+    with patch(
+        "custom_components.aliud_collecteur.async_get_clientsession",
+        return_value=session,
+    ):
+        assert await hass.config_entries.async_setup(entree.entry_id)
+        await hass.async_block_till_done()
+
+    bilan = await _collecter(hass, session)
+
+    assert len([a for a in session.appels if a["methode"] == "GET"]) == 1
+    assert sorted(bilan["medias"]["reddit"]["sources_non_lues"]) == ["a", "b", "c"]

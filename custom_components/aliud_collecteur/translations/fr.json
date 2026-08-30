@@ -47,30 +47,47 @@
       },
       "reddit": {
         "title": "Reddit",
-        "description": "Deux portes, et une seule suffit.\n\n**Un client enregistré** (reddit.com/prefs/apps) est préféré : un jeton ne fait que lire.\n\n**Un cookie de session** d'un compte du studio, à défaut — autorisé par le board le 31/08/2026. Il pèse plus lourd : il publie, vote et modère. Colle la valeur brute de l'en-tête `Cookie`.\n\nL'agent déclaré est exigé dans les deux cas.",
+        "description": "Un client enregistré (reddit.com/prefs/apps) si tu en as un : un jeton ne fait que lire. Sinon laisse les deux champs vides — l'écran suivant prend un cookie de session.\n\nL'agent déclaré est exigé dans les deux cas.",
         "data": {
           "reddit_user_agent": "Agent déclaré",
           "reddit_client_id": "Identifiant du client",
-          "reddit_client_secret": "Secret du client",
-          "reddit_cookie": "Cookie de session"
+          "reddit_client_secret": "Secret du client"
         },
         "data_description": {
-          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider.",
-          "reddit_cookie": "Laisse vide si tu as un client enregistré. Un `401` en cours de passage arrête le collecteur au lieu d'insister : une session tombée ne revient pas seule, et pilonner une porte fermée fait remarquer le compte."
+          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider."
         }
       },
       "reconfigure_reddit": {
         "title": "Reddit",
-        "description": "Deux portes, et une seule suffit.\n\n**Un client enregistré** (reddit.com/prefs/apps) est préféré : un jeton ne fait que lire.\n\n**Un cookie de session** d'un compte du studio, à défaut — autorisé par le board le 31/08/2026. Il pèse plus lourd : il publie, vote et modère. Colle la valeur brute de l'en-tête `Cookie`.\n\nL'agent déclaré est exigé dans les deux cas.",
+        "description": "Un client enregistré (reddit.com/prefs/apps) si tu en as un : un jeton ne fait que lire. Sinon laisse les deux champs vides — l'écran suivant prend un cookie de session.\n\nL'agent déclaré est exigé dans les deux cas.",
         "data": {
           "reddit_user_agent": "Agent déclaré",
           "reddit_client_id": "Identifiant du client",
-          "reddit_client_secret": "Secret du client",
-          "reddit_cookie": "Cookie de session"
+          "reddit_client_secret": "Secret du client"
         },
         "data_description": {
-          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider.",
-          "reddit_cookie": "Laisse vide si tu as un client enregistré. Un `401` en cours de passage arrête le collecteur au lieu d'insister : une session tombée ne revient pas seule, et pilonner une porte fermée fait remarquer le compte."
+          "reddit_user_agent": "Forme attendue : plateforme:identifiant:version (by /u/compte). Un agent générique se fait brider."
+        }
+      },
+      "cookies": {
+        "title": "Cookies de session",
+        "description": "Colle ce que ton navigateur exporte, dans **n'importe lequel des trois formats** : la ligne d'en-tête `nom=valeur; nom=valeur`, un export JSON d'extension (Cookie-Editor), ou un fichier `cookies.txt`. Les cookies d'un autre site sont écartés, et la date d'expiration est retenue quand l'export la porte.\n\nVider le champ efface le cookie rangé.",
+        "data": {
+          "reddit_cookie": "Cookie de session Reddit"
+        }
+      },
+      "reconfigure_cookies": {
+        "title": "Cookies de session",
+        "description": "État actuel — {etat}\n\nColle ce que ton navigateur exporte, dans **n'importe lequel des trois formats** : la ligne d'en-tête `nom=valeur; nom=valeur`, un export JSON d'extension (Cookie-Editor), ou un fichier `cookies.txt`. Les cookies d'un autre site sont écartés, et la date d'expiration est retenue quand l'export la porte.\n\nVider le champ efface le cookie rangé.",
+        "data": {
+          "reddit_cookie": "Cookie de session Reddit"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Session à refaire",
+        "description": "La session n'est plus reconnue — {etat}.\n\nRefais l'export depuis un navigateur connecté au compte du studio et colle-le ici. Rien n'est collecté sur ce média tant que ce n'est pas fait.",
+        "data": {
+          "reddit_cookie": "Cookie de session Reddit"
         }
       }
     },
@@ -82,11 +99,14 @@
       "stockage_injoignable": "Le point d'entrée est injoignable. Vérifier son écriture.",
       "stockage_incomplet": "Le stockage est à moitié rempli. Les cinq champs, ou aucun — quatre sur cinq est une saisie interrompue, pas une intention.",
       "aucun_media": "Il faut au moins un média. Sans lui, un passage ne lit rien.",
-      "reddit_sans_porte": "Ni client enregistré, ni cookie. Reddit refuse un client anonyme au niveau réseau : il faut l'un des deux."
+      "reddit_sans_porte": "Ni client enregistré, ni cookie. Reddit refuse un client anonyme au niveau réseau : il faut l'un des deux.",
+      "cookie_illisible": "Ce n'est aucun des trois formats connus. Attendu : la ligne d'en-tête, un export JSON d'extension, ou un fichier cookies.txt.",
+      "cookie_incomplet": "L'export ne porte pas les cookies de session. Vérifie que tu l'as fait depuis un onglet connecté au compte, et non depuis une fenêtre privée."
     },
     "abort": {
       "already_configured": "Le collecteur est déjà configuré.",
-      "reconfigure_successful": "Configuration mise à jour."
+      "reconfigure_successful": "Configuration mise à jour.",
+      "reauth_successful": "Session remplacée."
     }
   },
   "options": {

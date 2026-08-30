@@ -47,6 +47,20 @@ franchit rien : on lit un autre service, qui autorise ce qu'il autorise.
 l'accepte à la place du client enregistré, qui reste préféré : un jeton ne fait
 que lire, un cookie publie, vote et modère.
 
+Il se colle dans son propre écran de configuration, **dans n'importe lequel des
+trois formats** qu'un navigateur exporte : la ligne d'en-tête, un export JSON
+d'extension, ou un fichier `cookies.txt`. Les cookies d'un autre site sont
+écartés — coller l'export du mauvais onglet est l'erreur la plus facile à faire
+et la plus pénible à diagnostiquer.
+
+**Une session expire, et l'écran le dit.** Quand l'export porte une date, elle
+est gardée : le capteur montre `valide`, `bientot` ou `expire` avec les jours
+restants. Un cookie déjà périmé empêche l'intégration de démarrer, et une
+session qui tombe en cours de passage arrête le collecteur — dans les deux cas
+Home Assistant pose lui-même sa carte « à reconfigurer » et amène au formulaire.
+C'est son mécanisme natif de réauthentification, préféré à une notification
+qu'on ferme et qu'on oublie.
+
 Ce qui n'est **pas** fait, et c'est un choix : usurper un agent de navigateur.
 Le board a posé les deux techniques et a choisi le cookie. Un compte se connecte
 et le studio répond de ce qu'il lit ; un agent déguisé ne répond de rien, et
@@ -281,7 +295,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Cent cinquante-trois tests, dont la signature SigV4 recoupée contre le vecteur
+Cent quatre-vingt-un tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**

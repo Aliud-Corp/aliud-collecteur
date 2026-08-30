@@ -132,6 +132,16 @@ class PassageImpossible(Exception):
     """
 
 
+class SessionTombee(PassageImpossible):
+    """Le cookie n'est plus reconnu. Cas particulier, parce qu'il se répare.
+
+    Distinct d'un `PassageImpossible` ordinaire : celui-ci demande un geste
+    précis — remplacer le cookie — et Home Assistant sait le demander lui-même
+    par un flux de réauthentification. Une session tombée n'est pas une panne à
+    diagnostiquer, c'est un formulaire à rouvrir.
+    """
+
+
 @runtime_checkable
 class Collecteur(Protocol):
     """Ce qu'un média doit savoir faire pour entrer dans l'ordonnanceur."""

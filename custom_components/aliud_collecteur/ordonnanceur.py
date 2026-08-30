@@ -39,6 +39,7 @@ from .collecteurs import (
     Collecteur,
     Element,
     PassageImpossible,
+    SessionTombee,
     Source,
     SourceMuette,
     TropDeRequetes,
@@ -86,6 +87,7 @@ class Resultat:
     sources_non_lues: list[str] = field(default_factory=list)
     reprises: list[str] = field(default_factory=list)
     ecartes_par_plancher: int = 0
+    session_tombee: bool = False
     erreur: str | None = None
 
     @property
@@ -169,6 +171,11 @@ class Ordonnanceur:
 
         try:
             contexte = await collecteur.ouvrir(session)
+        except SessionTombee as exc:
+            resultat.session_tombee = True
+            resultat.erreur = str(exc)
+            resultat.sources_non_lues = [s.nom for s in file]
+            return _clore(resultat, depart)
         except PassageImpossible as exc:
             resultat.erreur = str(exc)
             resultat.sources_non_lues = [s.nom for s in file]
@@ -197,9 +204,16 @@ class Ordonnanceur:
                 break
 
             await rythme.attendre()
-            issue = await self._une_source(
-                collecteur, session, contexte, source, rythme, depart
-            )
+            try:
+                issue = await self._une_source(
+                    collecteur, session, contexte, source, rythme, depart
+                )
+            except SessionTombee as exc:
+                resultat.session_tombee = True
+                resultat.erreur = str(exc)
+                resultat.sources_non_lues = [s.nom for s in file[indice:]]
+                _LOGGER.warning("aliud_collecteur : %s", exc)
+                break
             if issue.elements is not None:
                 resultat.elements.extend(issue.elements)
                 resultat.ecartes_par_plancher += issue.ecartes
@@ -225,6 +239,10 @@ class Ordonnanceur:
         for tentative in range(self._reglages.tentatives):
             try:
                 moisson = await collecteur.moissonner(session, contexte, source)
+            except SessionTombee:
+                # Elle remonte : rien de ce passage n'aboutira, et ce qu'elle
+                # demande n'est pas un réessai mais un formulaire.
+                raise
             except SourceMuette as exc:
                 return _Issue(None, str(exc))
             except TropDeRequetes as exc:

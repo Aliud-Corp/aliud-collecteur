@@ -93,6 +93,7 @@ class CapteurDePassage(_Base):
             "cle_s3": b.cle_s3,
             "erreur": b.erreur,
             "en_cours": self._passeur.en_cours,
+            "cookies": self._passeur.cookies,
             "medias": {
                 nom: {
                     "resultat": x.resultat,

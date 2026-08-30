@@ -43,6 +43,30 @@ CONF_REDDIT_USER_AGENT = "reddit_user_agent"
 # jeton : il publie, vote et modère. Le client enregistré reste préféré.
 CONF_REDDIT_COOKIE = "reddit_cookie"
 
+# Les médias qui savent lire un cookie. `x` y figure avant son collecteur : ce
+# qui manque à X est le code qui moissonne, pas la place où ranger sa session.
+MEDIAS_A_COOKIE = ("reddit",)
+
+
+def cle_cookie(media: str) -> str:
+    return f"{media}_cookie"
+
+
+def cle_expiration(media: str) -> str:
+    return f"{media}_cookie_expire"
+
+
+# L'état d'un cookie, tel que le capteur et l'écran le montrent.
+COOKIE_ABSENT = "absent"
+COOKIE_VALIDE = "valide"
+COOKIE_BIENTOT = "bientot"
+COOKIE_EXPIRE = "expire"
+COOKIE_SANS_DATE = "sans_date"
+
+# Trois jours : de quoi voir l'avertissement un matin et refaire l'export le
+# soir. Plus court ne laisserait pas le temps, plus long crierait au loup.
+COOKIE_ALERTE_JOURS = 3
+
 CONF_S3_ENDPOINT = "s3_endpoint"
 CONF_S3_REGION = "s3_region"
 CONF_S3_BUCKET = "s3_bucket"

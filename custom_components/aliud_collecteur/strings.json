@@ -47,30 +47,47 @@
       },
       "reddit": {
         "title": "Reddit",
-        "description": "Two doors, and one is enough.\n\n**A registered client** (reddit.com/prefs/apps) is preferred: a token only reads.\n\n**A session cookie** from a studio account, failing that — allowed by the board on 2026-08-31. It weighs more: it posts, votes and moderates. Paste the raw `Cookie` header value.\n\nThe declared agent is required either way.",
+        "description": "A registered client (reddit.com/prefs/apps) if you have one: a token only reads. Otherwise leave both fields empty — the next screen takes a session cookie.\n\nThe declared agent is required either way.",
         "data": {
           "reddit_user_agent": "Declared user agent",
           "reddit_client_id": "Client ID",
-          "reddit_client_secret": "Client secret",
-          "reddit_cookie": "Session cookie"
+          "reddit_client_secret": "Client secret"
         },
         "data_description": {
-          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled.",
-          "reddit_cookie": "Leave empty if you have a registered client. A 401 mid-run stops the collector rather than insisting: a fallen session does not come back on its own, and hammering a closed door gets the account noticed."
+          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
         }
       },
       "reconfigure_reddit": {
         "title": "Reddit",
-        "description": "Two doors, and one is enough.\n\n**A registered client** (reddit.com/prefs/apps) is preferred: a token only reads.\n\n**A session cookie** from a studio account, failing that — allowed by the board on 2026-08-31. It weighs more: it posts, votes and moderates. Paste the raw `Cookie` header value.\n\nThe declared agent is required either way.",
+        "description": "A registered client (reddit.com/prefs/apps) if you have one: a token only reads. Otherwise leave both fields empty — the next screen takes a session cookie.\n\nThe declared agent is required either way.",
         "data": {
           "reddit_user_agent": "Declared user agent",
           "reddit_client_id": "Client ID",
-          "reddit_client_secret": "Client secret",
-          "reddit_cookie": "Session cookie"
+          "reddit_client_secret": "Client secret"
         },
         "data_description": {
-          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled.",
-          "reddit_cookie": "Leave empty if you have a registered client. A 401 mid-run stops the collector rather than insisting: a fallen session does not come back on its own, and hammering a closed door gets the account noticed."
+          "reddit_user_agent": "Expected shape: platform:identifier:version (by /u/account). A generic agent gets throttled."
+        }
+      },
+      "cookies": {
+        "title": "Session cookies",
+        "description": "Paste what your browser exports, in **any of three formats**: the header line `name=value; name=value`, a browser-extension JSON export (Cookie-Editor), or a `cookies.txt` file. Cookies from another site are dropped, and the expiry is kept when the export carries it.\n\nClearing the field removes the stored cookie.",
+        "data": {
+          "reddit_cookie": "Reddit session cookie"
+        }
+      },
+      "reconfigure_cookies": {
+        "title": "Session cookies",
+        "description": "Current state — {etat}\n\nPaste what your browser exports, in **any of three formats**: the header line `name=value; name=value`, a browser-extension JSON export (Cookie-Editor), or a `cookies.txt` file. Cookies from another site are dropped, and the expiry is kept when the export carries it.\n\nClearing the field removes the stored cookie.",
+        "data": {
+          "reddit_cookie": "Reddit session cookie"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Session needs renewing",
+        "description": "The session is no longer recognised — {etat}.\n\nExport it again from a browser signed in to the studio account and paste it here. Nothing is collected from this medium until you do.",
+        "data": {
+          "reddit_cookie": "Reddit session cookie"
         }
       }
     },
@@ -82,11 +99,14 @@
       "stockage_injoignable": "The endpoint is unreachable. Check its spelling.",
       "stockage_incomplet": "Storage is half filled in. Either all five fields, or none of them — four out of five is an interrupted entry, not an intention.",
       "aucun_media": "At least one medium is needed. Without one, a run reads nothing.",
-      "reddit_sans_porte": "Neither a registered client nor a cookie. Reddit refuses an anonymous client at the network layer: one of the two is needed."
+      "reddit_sans_porte": "Neither a registered client nor a cookie. Reddit refuses an anonymous client at the network layer: one of the two is needed.",
+      "cookie_illisible": "This is none of the three known formats. Expected: the header line, a browser-extension JSON export, or a cookies.txt file.",
+      "cookie_incomplet": "The export does not carry the session cookies. Check you exported from a tab signed in to the account, not from a private window."
     },
     "abort": {
       "already_configured": "The collector is already configured.",
-      "reconfigure_successful": "Configuration updated."
+      "reconfigure_successful": "Configuration updated.",
+      "reauth_successful": "Session replaced."
     }
   },
   "options": {
