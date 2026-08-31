@@ -127,12 +127,14 @@
           "releves_gardes": "Relevés gardés localement",
           "garder_brut": "Garder la charge d'origine",
           "decalage_jours": "Décalage (jours)",
-          "fenetre_jours": "Fenêtre (jours)"
+          "fenetre_jours": "Fenêtre (jours)",
+          "disposition": "Disposition dans le bucket"
         },
         "data_description": {
           "budget_secondes": "Passé ce délai, le relevé sort avec ce qu'il a, les sources non lues sont nommées, et elles repassent en tête au passage suivant.",
           "garder_brut": "L'archive est brute : couper la charge d'origine allège les fichiers mais ne se répare pas rétroactivement.",
-          "decalage_jours": "Arctic Shift capture une publication à sa création puis la recapture plus tard : à J-0 les scores sont tous à un point, à J-3 ils sont mûrs. Classer la veille reviendrait à classer des zéros."
+          "decalage_jours": "Arctic Shift capture une publication à sa création puis la recapture plus tard : à J-0 les scores sont tous à un point, à J-3 ils sont mûrs. Classer la veille reviendrait à classer des zéros.",
+          "disposition": "Ce qu'un `ls` de préfixe rend. Par média : tout ce qu'une source a rendu. Par date : tout ce qui est tombé un jour donné, médias confondus."
         }
       }
     }
@@ -184,6 +186,12 @@
         "hackernews": "Hacker News",
         "lobsters": "Lobsters",
         "reddit": "Reddit — demande un client enregistré"
+      }
+    },
+    "disposition": {
+      "options": {
+        "media_puis_date": "Par média — reddit/2026/08/31/…",
+        "date_puis_media": "Par date du jour — 2026-08-31/reddit/…"
       }
     }
   }

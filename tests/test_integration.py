@@ -585,3 +585,18 @@ async def test_une_session_tombee_n_insiste_pas_sur_les_autres_sources(hass):
 
     assert len([a for a in session.appels if a["methode"] == "GET"]) == 1
     assert sorted(bilan["medias"]["reddit"]["sources_non_lues"]) == ["a", "b", "c"]
+
+
+async def test_la_disposition_choisie_atteint_la_cle_deposee(hass):
+    session = _session_nominale(1)
+    entree = await _monter(hass, session, "programming\n")
+    hass.config_entries.async_update_entry(
+        entree, options={**OPTIONS, "disposition": "date_puis_media"}
+    )
+    await hass.async_block_till_done()
+
+    bilan = await _collecter(hass, session)
+
+    cle = bilan["medias"]["reddit"]["cle_s3"]
+    assert cle.startswith("archives/20"), cle
+    assert "/reddit/reddit-" in cle

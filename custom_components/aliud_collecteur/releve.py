@@ -26,7 +26,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from .const import SCHEMA_RELEVE
+from .const import DISPOSITION_DEFAUT, SCHEMA_RELEVE
 from .ordonnanceur import Resultat
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,12 +65,22 @@ def horodatage(debut: str) -> datetime:
     return datetime.fromisoformat(debut)
 
 
-def cle_datee(media: str, debut: str) -> str:
-    """`reddit/2026/08/28/reddit-20260828T063012Z.json.gz`"""
+def cle_datee(media: str, debut: str, disposition: str = DISPOSITION_DEFAUT) -> str:
+    """Où le relevé se range dans le bucket, selon la disposition choisie.
+
+        media_puis_date  reddit/2026/08/31/reddit-20260831T063012Z.json.gz
+        date_puis_media  2026-08-31/reddit/reddit-20260831T063012Z.json.gz
+
+    Le nom du fichier ne change pas d'une disposition à l'autre : il porte
+    l'instant du départ, et c'est lui qui rend deux passages du même jour
+    distincts. Ce qui change est le chemin, donc ce qu'un `ls` de préfixe rend —
+    tout un média, ou toute une journée.
+    """
     quand = horodatage(debut)
-    return (
-        f"{media}/{quand:%Y/%m/%d}/{media}-{quand:%Y%m%dT%H%M%SZ}.json.gz"
-    )
+    fichier = f"{media}-{quand:%Y%m%dT%H%M%SZ}.json.gz"
+    if disposition == "date_puis_media":
+        return f"{quand:%Y-%m-%d}/{media}/{fichier}"
+    return f"{media}/{quand:%Y/%m/%d}/{fichier}"
 
 
 def cle_derniere(media: str) -> str:

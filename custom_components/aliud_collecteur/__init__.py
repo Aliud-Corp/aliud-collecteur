@@ -65,6 +65,7 @@ from .const import (
     CONF_S3_REGION,
     CONF_S3_SECRET_KEY,
     DEBIT_DEFAUT,
+    DISPOSITION_DEFAUT,
     DECALAGE_DEFAUT,
     DOMAIN,
     DOSSIER,
@@ -78,6 +79,7 @@ from .const import (
     MINUTE_DEFAUT,
     OPT_BUDGET,
     OPT_DEBIT,
+    OPT_DISPOSITION,
     OPT_DECALAGE,
     OPT_FENETRE,
     OPT_FENETRE_JOURS,
@@ -388,7 +390,9 @@ class Passeur:
         self, session: Any, media: str, debut: str, octets: bytes
     ) -> str:
         stockage = self._stockage()
-        cle = releve.cle_datee(media, debut)
+        cle = releve.cle_datee(
+            media, debut, self.entry.options.get(OPT_DISPOSITION, DISPOSITION_DEFAUT)
+        )
         await depot_s3.deposer(
             session, stockage, cle, octets, "application/json", encodage="gzip"
         )

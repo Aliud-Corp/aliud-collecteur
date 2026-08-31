@@ -295,7 +295,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Cent quatre-vingt-un tests, dont la signature SigV4 recoupée contre le vecteur
+Cent quatre-vingt-six tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**

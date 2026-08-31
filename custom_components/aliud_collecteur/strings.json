@@ -127,12 +127,14 @@
           "releves_gardes": "Reports kept locally",
           "garder_brut": "Keep the original payload",
           "decalage_jours": "Lag (days)",
-          "fenetre_jours": "Window (days)"
+          "fenetre_jours": "Window (days)",
+          "disposition": "Layout in the bucket"
         },
         "data_description": {
           "budget_secondes": "Past this delay the report ships with what it has, unread sources are named, and they move to the front of the queue on the next run.",
           "garder_brut": "The archive is raw: dropping the original payload makes files smaller and cannot be undone after the fact.",
-          "decalage_jours": "Arctic Shift captures a post at creation then captures it again later: on day 0 every score is 1, by day 3 they have matured. Ranking yesterday would rank zeros."
+          "decalage_jours": "Arctic Shift captures a post at creation then captures it again later: on day 0 every score is 1, by day 3 they have matured. Ranking yesterday would rank zeros.",
+          "disposition": "What listing a prefix returns. By medium: everything one source produced. By date: everything that landed on a given day, all media together."
         }
       }
     }
@@ -184,6 +186,12 @@
         "hackernews": "Hacker News",
         "lobsters": "Lobsters",
         "reddit": "Reddit — needs a registered client"
+      }
+    },
+    "disposition": {
+      "options": {
+        "media_puis_date": "By medium — reddit/2026/08/31/…",
+        "date_puis_media": "By day — 2026-08-31/reddit/…"
       }
     }
   }

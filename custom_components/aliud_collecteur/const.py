@@ -88,6 +88,7 @@ OPT_DECALAGE = "decalage_jours"
 OPT_FENETRE_JOURS = "fenetre_jours"
 OPT_GARDER_BRUT = "garder_brut"
 OPT_RELEVES_GARDES = "releves_gardes"
+OPT_DISPOSITION = "disposition"
 
 HEURE_DEFAUT = 6
 MINUTE_DEFAUT = 30
@@ -107,6 +108,20 @@ DECALAGE_DEFAUT = 2
 FENETRE_JOURS_DEFAUT = 2
 GARDER_BRUT_DEFAUT = True
 RELEVES_GARDES_DEFAUT = 7
+
+# Comment les relevés se rangent dans le bucket. Deux dispositions, et le choix
+# n'est pas cosmétique : il décide de ce qu'un `ls` d'un préfixe rend.
+#
+#   media_puis_date  reddit/2026/08/31/reddit-20260831T063012Z.json.gz
+#                    « tout ce que ce média a rendu », un média à la fois
+#   date_puis_media  2026-08-31/reddit/reddit-20260831T063012Z.json.gz
+#                    « tout ce qui est tombé ce jour-là », tous médias confondus
+#
+# La première sert un lecteur qui suit une source. La seconde sert un lecteur
+# qui reprend une journée — c'est celle qu'on veut quand l'archive se relit par
+# date plutôt que par origine.
+DISPOSITIONS = ("media_puis_date", "date_puis_media")
+DISPOSITION_DEFAUT = "media_puis_date"
 
 # En dessous de ce reste annoncé par la source, l'ordonnanceur étire son
 # intervalle pour tenir jusqu'à la remise à zéro.

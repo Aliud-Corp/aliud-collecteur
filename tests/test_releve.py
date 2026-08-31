@@ -132,3 +132,36 @@ def test_la_liste_editee_a_la_main_est_nettoyee_sans_etre_reecrite(tmp_path):
         "kubernetes",
     ]
     assert chemin.read_text(encoding="utf-8") == avant
+
+
+# ── La disposition dans le bucket ───────────────────────────────────────────
+#
+# Le choix décide de ce qu'un `ls` de préfixe rend : tout un média, ou toute
+# une journée. Le nom du fichier ne bouge pas — c'est lui qui distingue deux
+# passages du même jour.
+
+def test_la_disposition_par_defaut_range_par_media():
+    assert releve.cle_datee("reddit", DEBUT) == (
+        "reddit/2026/08/28/reddit-20260828T063012Z.json.gz"
+    )
+
+
+def test_la_disposition_par_date_range_une_journee_ensemble():
+    assert releve.cle_datee("reddit", DEBUT, "date_puis_media") == (
+        "2026-08-28/reddit/reddit-20260828T063012Z.json.gz"
+    )
+    assert releve.cle_datee("lobsters", DEBUT, "date_puis_media") == (
+        "2026-08-28/lobsters/lobsters-20260828T063012Z.json.gz"
+    )
+
+
+def test_une_disposition_inconnue_retombe_sur_celle_par_defaut():
+    assert releve.cle_datee("reddit", DEBUT, "farfelue") == releve.cle_datee(
+        "reddit", DEBUT
+    )
+
+
+def test_le_nom_du_fichier_ne_depend_pas_de_la_disposition():
+    par_media = releve.cle_datee("reddit", DEBUT).rsplit("/", 1)[1]
+    par_date = releve.cle_datee("reddit", DEBUT, "date_puis_media").rsplit("/", 1)[1]
+    assert par_media == par_date

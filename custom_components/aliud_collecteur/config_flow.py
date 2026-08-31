@@ -73,6 +73,8 @@ from .const import (
     CONF_S3_REGION,
     CONF_S3_SECRET_KEY,
     DEBIT_DEFAUT,
+    DISPOSITIONS,
+    DISPOSITION_DEFAUT,
     DECALAGE_DEFAUT,
     DOMAIN,
     FENETRE_DEFAUT,
@@ -90,6 +92,7 @@ from .const import (
     NOM,
     OPT_BUDGET,
     OPT_DEBIT,
+    OPT_DISPOSITION,
     OPT_DECALAGE,
     OPT_FENETRE,
     OPT_FENETRE_JOURS,
@@ -531,6 +534,13 @@ class FluxDOptions(OptionsFlow):
                     SelectSelectorConfig(
                         options=["hour", "day", "week", "month"],
                         mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(OPT_DISPOSITION, default=o.get(OPT_DISPOSITION, DISPOSITION_DEFAUT)): SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(DISPOSITIONS),
+                        mode=SelectSelectorMode.DROPDOWN,
+                        translation_key="disposition",
                     )
                 ),
                 vol.Required(OPT_RELEVES_GARDES, default=o.get(OPT_RELEVES_GARDES, RELEVES_GARDES_DEFAUT)): _nombre(0, 90),
