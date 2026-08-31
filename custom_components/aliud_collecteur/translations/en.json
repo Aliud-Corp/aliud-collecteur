@@ -120,9 +120,9 @@
       "stockage_injoignable": "The endpoint is unreachable. Check its spelling.",
       "stockage_incomplet": "Storage is half filled in. Either all five fields, or none of them — four out of five is an interrupted entry, not an intention.",
       "aucun_media": "At least one medium is needed. Without one, a run reads nothing.",
-      "reddit_sans_porte": "Neither a registered client nor a cookie. Reddit refuses an anonymous client at the network layer: one of the two is needed.",
       "cookie_illisible": "This is none of the three known formats. Expected: the header line, a browser-extension JSON export, or a cookies.txt file.",
-      "cookie_incomplet": "The export does not carry the session cookies. Check you exported from a tab signed in to the account, not from a private window."
+      "cookie_incomplet": "The export does not carry the session cookies. Check you exported from a tab signed in to the account, not from a private window.",
+      "sans_porte": "A selected medium still has nothing to read it with. Reddit takes a registered client or a cookie, X takes a cookie. Untick it, or paste its session."
     },
     "abort": {
       "already_configured": "The collector is already configured.",

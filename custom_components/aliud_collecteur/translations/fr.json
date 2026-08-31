@@ -120,9 +120,9 @@
       "stockage_injoignable": "Le point d'entrée est injoignable. Vérifier son écriture.",
       "stockage_incomplet": "Le stockage est à moitié rempli. Les cinq champs, ou aucun — quatre sur cinq est une saisie interrompue, pas une intention.",
       "aucun_media": "Il faut au moins un média. Sans lui, un passage ne lit rien.",
-      "reddit_sans_porte": "Ni client enregistré, ni cookie. Reddit refuse un client anonyme au niveau réseau : il faut l'un des deux.",
       "cookie_illisible": "Ce n'est aucun des trois formats connus. Attendu : la ligne d'en-tête, un export JSON d'extension, ou un fichier cookies.txt.",
-      "cookie_incomplet": "L'export ne porte pas les cookies de session. Vérifie que tu l'as fait depuis un onglet connecté au compte, et non depuis une fenêtre privée."
+      "cookie_incomplet": "L'export ne porte pas les cookies de session. Vérifie que tu l'as fait depuis un onglet connecté au compte, et non depuis une fenêtre privée.",
+      "sans_porte": "Un média coché n'a toujours pas de quoi le lire. Reddit prend un client enregistré ou un cookie, X prend un cookie. Vide sa case, ou colle sa session."
     },
     "abort": {
       "already_configured": "Le collecteur est déjà configuré.",

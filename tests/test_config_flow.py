@@ -378,7 +378,7 @@ async def test_reddit_sans_client_ni_cookie_est_refuse_a_l_ecran(hass):
     flux = await hass.config_entries.flow.async_configure(
         flux["flow_id"], {"reddit_cookie": ""}
     )
-    assert flux["errors"] == {"base": "reddit_sans_porte"}
+    assert flux["errors"] == {"base": "sans_porte"}
 
 
 async def test_un_cookie_seul_suffit_a_ouvrir_reddit(hass):
@@ -443,7 +443,7 @@ async def test_la_reauthentification_refuse_de_laisser_reddit_sans_porte(hass):
         flux = await hass.config_entries.flow.async_configure(
             flux["flow_id"], {"reddit_cookie": ""}
         )
-    assert flux["errors"] == {"base": "reddit_sans_porte"}
+    assert flux["errors"] == {"base": "sans_porte"}
 
 
 def test_aucune_etape_du_flux_n_est_definie_deux_fois():
@@ -462,3 +462,77 @@ def test_aucune_etape_du_flux_n_est_definie_deux_fois():
     noms = re.findall(r"\n    async def (async_step_\w+)", source)
     doublons = sorted({n for n in noms if noms.count(n) > 1})
     assert doublons == [], f"étapes définies deux fois : {doublons}"
+
+
+# ── Cocher un média n'est pas fournir sa clé ────────────────────────────────
+#
+# Écrit après coup, contre une impasse signalée à l'usage : cocher Reddit dans
+# la branche « médias » était refusé faute de cookie, et l'écran des cookies ne
+# montre que les médias cochés. Ni l'un ni l'autre ne pouvait passer en premier.
+
+async def _entree_ouverte(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN,
+        data={"medias": ["hackernews", "lobsters"], **{c: "" for c in STOCKAGE}},
+    )
+    entree.add_to_hass(hass)
+    return entree
+
+
+@pytest.mark.parametrize("media", ["reddit", "x"])
+async def test_cocher_un_media_a_cookie_mene_a_l_ecran_qui_le_demande(hass, media):
+    entree = await _entree_ouverte(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await _menu(hass, entree, "reconfigure_medias")
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"medias": ["lobsters", media]}
+        )
+
+    assert flux["type"] is FlowResultType.FORM
+    assert flux["step_id"] == "reconfigure_cookies", "on enchaîne, on ne refuse pas"
+    assert flux.get("errors") in (None, {}), "rien n'a encore été saisi de travers"
+    assert f"{media}_cookie" in flux["data_schema"].schema.__str__()
+
+
+async def test_le_cookie_colle_dans_la_foulee_enregistre_le_tout(hass):
+    entree = await _entree_ouverte(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await _menu(hass, entree, "reconfigure_medias")
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"medias": ["lobsters", "reddit"]}
+        )
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"reddit_cookie": _export()}
+        )
+
+    assert flux["reason"] == "reconfigure_successful"
+    assert entree.data["medias"] == ["lobsters", "reddit"]
+    assert entree.data["reddit_cookie"] == "reddit_session=abc; token_v2=def"
+
+
+async def test_un_media_sans_porte_est_refuse_a_l_ecran_des_cookies(hass):
+    entree = await _entree_ouverte(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await _menu(hass, entree, "reconfigure_medias")
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"medias": ["lobsters", "x"]}
+        )
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"x_cookie": ""}
+        )
+
+    assert flux["errors"] == {"base": "sans_porte"}
+    assert entree.data["medias"] == ["hackernews", "lobsters"], "rien n'a bougé"
+
+
+async def test_un_media_sans_cookie_ne_bloque_pas_les_autres(hass):
+    entree = await _entree_ouverte(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await _menu(hass, entree, "reconfigure_medias")
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"medias": ["rss", "lobsters"]}
+        )
+    assert flux["reason"] == "reconfigure_successful"
+    assert entree.data["medias"] == ["rss", "lobsters"]

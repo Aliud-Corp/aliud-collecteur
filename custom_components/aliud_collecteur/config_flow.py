@@ -184,15 +184,27 @@ def _valider_cookies(saisie: dict[str, Any], medias: list[str]) -> tuple[dict, s
     return valeurs, ""
 
 
-def _sans_porte(donnees: dict[str, Any]) -> bool:
-    """Reddit coché sans client enregistré ni cookie : rien ne pourra le lire."""
-    if "reddit" not in (donnees.get(CONF_MEDIAS) or []):
-        return False
-    a_client = bool(
-        str(donnees.get(CONF_REDDIT_CLIENT_ID, "")).strip()
-        and str(donnees.get(CONF_REDDIT_CLIENT_SECRET, "")).strip()
-    )
-    return not a_client and not str(donnees.get(CONF_REDDIT_COOKIE, "")).strip()
+def _sans_porte(donnees: dict[str, Any]) -> list[str]:
+    """Les médias cochés que rien ne pourra lire, faute d'identifiants.
+
+    Rend la liste plutôt qu'un booléen : le message dit lesquels, et l'appelant
+    décide s'il refuse ou s'il enchaîne sur l'écran qui les demande.
+    """
+    choisis = donnees.get(CONF_MEDIAS) or []
+    manquants = []
+    for media in MEDIAS_A_COOKIE:
+        if media not in choisis:
+            continue
+        if str(donnees.get(cle_cookie(media), "")).strip():
+            continue
+        # Reddit a une seconde porte : son client enregistré.
+        if media == "reddit" and (
+            str(donnees.get(CONF_REDDIT_CLIENT_ID, "")).strip()
+            and str(donnees.get(CONF_REDDIT_CLIENT_SECRET, "")).strip()
+        ):
+            continue
+        manquants.append(media)
+    return manquants
 
 # Tout est facultatif : l'écran se valide à vide tant qu'aucun bucket n'existe.
 # Ce qui reste exigé est la cohérence — quatre champs sur cinq remplis est une
@@ -291,7 +303,7 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             else:
                 candidat = {**self._donnees, **valeurs}
                 if _sans_porte(candidat):
-                    erreurs["base"] = "reddit_sans_porte"
+                    erreurs["base"] = "sans_porte"
                 else:
                     self._donnees = candidat
                     return await self.async_step_stockage()
@@ -359,11 +371,17 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             if not medias:
                 erreurs["base"] = "aucun_media"
             else:
-                candidat = {**entree.data, CONF_MEDIAS: medias}
-                if _sans_porte(candidat):
-                    erreurs["base"] = "reddit_sans_porte"
-                else:
-                    return self.async_update_reload_and_abort(entree, data=candidat)
+                # Choisir ce qu'on lit et fournir la clé sont deux gestes. Cocher
+                # Reddit n'a jamais voulu dire « j'ai déjà le cookie » — et
+                # refuser le choix laissait dans une impasse, puisque l'écran des
+                # cookies ne montre que les médias cochés. On enchaîne au lieu de
+                # refuser.
+                self._donnees = {**entree.data, CONF_MEDIAS: medias}
+                if _sans_porte(self._donnees):
+                    return await self.async_step_reconfigure_cookies()
+                return self.async_update_reload_and_abort(
+                    entree, data=self._donnees
+                )
 
         return self.async_show_form(
             step_id="reconfigure_medias",
@@ -387,7 +405,7 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             else:
                 candidat = {**entree.data, **user_input}
                 if _sans_porte(candidat):
-                    erreurs["base"] = "reddit_sans_porte"
+                    erreurs["base"] = "sans_porte"
                 else:
                     return self.async_update_reload_and_abort(entree, data=candidat)
 
@@ -407,16 +425,20 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         entree = self._get_reconfigure_entry()
-        medias = list(entree.data.get(CONF_MEDIAS) or [])
+        # Le choix de médias fait juste avant, s'il y en a un : sinon l'écran
+        # montrerait les champs d'hier pour une sélection d'aujourd'hui.
+        base = self._donnees or dict(entree.data)
+        medias = list(base.get(CONF_MEDIAS) or [])
         erreurs: dict[str, str] = {}
         if user_input is not None:
             valeurs, erreur = _valider_cookies(user_input, medias)
             if erreur:
                 erreurs["base"] = erreur
             else:
-                candidat = {**entree.data, **valeurs}
-                if _sans_porte(candidat):
-                    erreurs["base"] = "reddit_sans_porte"
+                candidat = {**base, **valeurs}
+                manquants = _sans_porte(candidat)
+                if manquants:
+                    erreurs["base"] = "sans_porte"
                 else:
                     return self.async_update_reload_and_abort(entree, data=candidat)
 
@@ -424,7 +446,7 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             step_id="reconfigure_cookies",
             data_schema=_schema_cookies(medias),
             errors=erreurs,
-            description_placeholders=_etat_des_cookies(entree.data, medias),
+            description_placeholders=_etat_des_cookies(base, medias),
         )
 
     async def async_step_reconfigure_stockage(
@@ -480,7 +502,7 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             else:
                 candidat = {**entree.data, **valeurs}
                 if _sans_porte(candidat):
-                    erreurs["base"] = "reddit_sans_porte"
+                    erreurs["base"] = "sans_porte"
                 else:
                     return self.async_update_reload_and_abort(entree, data=candidat)
 
