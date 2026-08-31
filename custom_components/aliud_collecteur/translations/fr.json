@@ -17,15 +17,17 @@
         }
       },
       "reconfigure": {
-        "title": "Médias",
-        "description": "Changer ce que le collecteur lit.",
-        "data": {
-          "medias": "Médias à lire"
+        "title": "Que veux-tu régler ?",
+        "menu_options": {
+          "reconfigure_medias": "Médias lus",
+          "reconfigure_reddit": "Client Reddit enregistré",
+          "reconfigure_cookies": "Cookies de session",
+          "reconfigure_stockage": "Stockage objet S3"
         }
       },
       "reconfigure_stockage": {
         "title": "Stockage objet",
-        "description": "À remplir une fois le bucket créé. Laisser la clé secrète vide garde celle déjà rangée ; vider tous les champs revient à une collecte sur disque seul.",
+        "description": "Le bucket compatible S3 où le relevé du jour est déposé. Le point d'entrée se lit dans la console du fournisseur, sur le bucket.\n\n**Laisse tous les champs vides tant que le bucket n'existe pas.** La collecte a lieu, le relevé s'écrit sur le disque, et rien n'est envoyé. Le stockage s'ajoute ensuite par « Reconfigurer ».",
         "data": {
           "s3_endpoint": "Point d'entrée",
           "s3_region": "Région",
@@ -88,6 +90,13 @@
         "description": "La session n'est plus reconnue — {etat}.\n\nRefais l'export depuis un navigateur connecté au compte du studio et colle-le ici. Rien n'est collecté sur ce média tant que ce n'est pas fait.",
         "data": {
           "reddit_cookie": "Cookie de session Reddit"
+        }
+      },
+      "reconfigure_medias": {
+        "title": "Médias",
+        "description": "Changer ce que le collecteur lit.",
+        "data": {
+          "medias": "Médias à lire"
         }
       }
     },

@@ -192,45 +192,72 @@ async def _entree_sans_stockage(hass):
     return entree
 
 
-async def test_la_reconfiguration_ajoute_le_stockage_sans_toucher_a_reddit(hass):
-    entree = await _entree_sans_stockage(hass)
+async def _menu(hass, entree, branche):
+    """Le menu de reconfiguration, puis la branche demandée."""
+    flux = await entree.start_reconfigure_flow(hass)
+    assert flux["type"] is FlowResultType.MENU, flux["type"]
+    return await hass.config_entries.flow.async_configure(
+        flux["flow_id"], {"next_step_id": branche}
+    )
 
+
+async def test_le_menu_n_offre_que_les_branches_qui_ont_un_sens(hass):
+    entree = await _entree_sans_stockage(hass)
     with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
         flux = await entree.start_reconfigure_flow(hass)
-        assert flux["step_id"] == "reconfigure"
-        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
-        assert flux["step_id"] == "reconfigure_reddit"
+    assert flux["type"] is FlowResultType.MENU
+    # Reddit est coché : ses deux branches sont là. Le stockage l'est toujours.
+    assert flux["menu_options"] == [
+        "reconfigure_medias",
+        "reconfigure_reddit",
+        "reconfigure_cookies",
+        "reconfigure_stockage",
+    ]
 
-        with _session(Reponse(200, {"access_token": "j"})):
-            flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
-        flux = await _passer_les_cookies(hass, flux)
+
+async def test_sans_reddit_le_menu_n_offre_ni_reddit_ni_cookies(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN,
+        data={"medias": ["lobsters"], **{c: "" for c in STOCKAGE}},
+    )
+    entree.add_to_hass(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await entree.start_reconfigure_flow(hass)
+    assert flux["menu_options"] == ["reconfigure_medias", "reconfigure_stockage"]
+
+
+async def test_le_stockage_se_regle_sans_retraverser_le_reste(hass):
+    entree = await _entree_sans_stockage(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await _menu(hass, entree, "reconfigure_stockage")
         assert flux["step_id"] == "reconfigure_stockage"
-
         with _session(Reponse(200)):
             flux = await hass.config_entries.flow.async_configure(
                 flux["flow_id"], STOCKAGE
             )
 
-    assert flux["type"] is FlowResultType.ABORT
     assert flux["reason"] == "reconfigure_successful"
     assert entree.data["s3_bucket"] == "aliud-collecte"
-    assert entree.data["reddit_client_id"] == "ID"
+    # Ce que la branche ne doit surtout pas emporter. Un doublon de méthode
+    # avait fait exactement ça : l'ancienne définition, héritée du couloir,
+    # écrasait la neuve et repartait d'un dictionnaire vide.
+    assert entree.data["reddit_user_agent"] == REDDIT["reddit_user_agent"]
+    assert entree.data["medias"] == MEDIAS["medias"]
 
 
 async def test_une_cle_secrete_laissee_vide_garde_celle_deja_rangee(hass):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entree = MockConfigEntry(
-        domain=DOMAIN, unique_id=DOMAIN, data={**MEDIAS, **REDDIT, **COOKIE_RANGE, **STOCKAGE}
+        domain=DOMAIN, unique_id=DOMAIN,
+        data={**MEDIAS, **REDDIT, **COOKIE_RANGE, **STOCKAGE},
     )
     entree.add_to_hass(hass)
 
     with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
-        flux = await entree.start_reconfigure_flow(hass)
-        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
-        with _session(Reponse(200, {"access_token": "j"})):
-            flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
-        flux = await _passer_les_cookies(hass, flux)
+        flux = await _menu(hass, entree, "reconfigure_stockage")
         with _session(Reponse(200)):
             flux = await hass.config_entries.flow.async_configure(
                 flux["flow_id"], {**STOCKAGE, "s3_secret_key": "", "s3_prefixe": "neuf"}
@@ -241,20 +268,17 @@ async def test_une_cle_secrete_laissee_vide_garde_celle_deja_rangee(hass):
     assert entree.data["s3_prefixe"] == "neuf"
 
 
-async def test_vider_le_stockage_par_reconfiguration_revient_au_disque_seul(hass):
+async def test_vider_le_stockage_revient_au_disque_seul(hass):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     entree = MockConfigEntry(
-        domain=DOMAIN, unique_id=DOMAIN, data={**MEDIAS, **REDDIT, **COOKIE_RANGE, **STOCKAGE}
+        domain=DOMAIN, unique_id=DOMAIN,
+        data={**MEDIAS, **REDDIT, **COOKIE_RANGE, **STOCKAGE},
     )
     entree.add_to_hass(hass)
 
     with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
-        flux = await entree.start_reconfigure_flow(hass)
-        flux = await hass.config_entries.flow.async_configure(flux["flow_id"], MEDIAS)
-        with _session(Reponse(200, {"access_token": "j"})):
-            flux = await hass.config_entries.flow.async_configure(flux["flow_id"], REDDIT)
-        flux = await _passer_les_cookies(hass, flux)
+        flux = await _menu(hass, entree, "reconfigure_stockage")
         session = Session()
         with patch(
             "custom_components.aliud_collecteur.config_flow.async_get_clientsession",
@@ -267,6 +291,26 @@ async def test_vider_le_stockage_par_reconfiguration_revient_au_disque_seul(hass
     assert flux["reason"] == "reconfigure_successful"
     assert entree.data["s3_bucket"] == ""
     assert session.appels == []
+
+
+async def test_les_medias_se_changent_sans_toucher_au_stockage(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN,
+        data={**MEDIAS, **REDDIT, **COOKIE_RANGE, **STOCKAGE},
+    )
+    entree.add_to_hass(hass)
+
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await _menu(hass, entree, "reconfigure_medias")
+        flux = await hass.config_entries.flow.async_configure(
+            flux["flow_id"], {"medias": ["lobsters", "rss"]}
+        )
+
+    assert flux["reason"] == "reconfigure_successful"
+    assert entree.data["medias"] == ["rss", "lobsters"], "remis dans l'ordre déclaré"
+    assert entree.data["s3_bucket"] == "aliud-collecte"
 
 
 # ── L'écran des cookies ─────────────────────────────────────────────────────
@@ -400,3 +444,21 @@ async def test_la_reauthentification_refuse_de_laisser_reddit_sans_porte(hass):
             flux["flow_id"], {"reddit_cookie": ""}
         )
     assert flux["errors"] == {"base": "reddit_sans_porte"}
+
+
+def test_aucune_etape_du_flux_n_est_definie_deux_fois():
+    """Une méthode redéfinie plus bas écrase la première, en silence.
+
+    Écrit après coup : deux `async_step_reconfigure_stockage` cohabitaient, et
+    Python gardait la seconde — l'ancienne, qui repartait d'un dictionnaire vide
+    et effaçait tout le reste de l'entrée. Rien dans la syntaxe ne le signale.
+    """
+    import inspect
+    import re
+
+    from custom_components.aliud_collecteur import config_flow
+
+    source = inspect.getsource(config_flow)
+    noms = re.findall(r"\n    async def (async_step_\w+)", source)
+    doublons = sorted({n for n in noms if noms.count(n) > 1})
+    assert doublons == [], f"étapes définies deux fois : {doublons}"

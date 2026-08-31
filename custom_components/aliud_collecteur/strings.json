@@ -17,15 +17,17 @@
         }
       },
       "reconfigure": {
-        "title": "Media",
-        "description": "Change what the collector reads.",
-        "data": {
-          "medias": "Media to read"
+        "title": "What do you want to change?",
+        "menu_options": {
+          "reconfigure_medias": "Media read",
+          "reconfigure_reddit": "Registered Reddit client",
+          "reconfigure_cookies": "Session cookies",
+          "reconfigure_stockage": "S3 object storage"
         }
       },
       "reconfigure_stockage": {
         "title": "Object storage",
-        "description": "Fill this in once the bucket exists. Leave the secret key empty to keep the one already stored; empty every field to go back to disk-only collection.",
+        "description": "The S3-compatible bucket the daily report is written to. The endpoint is read from the provider's console, on the bucket itself.\n\n**Leave every field empty if the bucket does not exist yet.** Collection runs, the report is written to disk, and nothing is uploaded. Add the storage later through Reconfigure.",
         "data": {
           "s3_endpoint": "Endpoint",
           "s3_region": "Region",
@@ -88,6 +90,13 @@
         "description": "The session is no longer recognised — {etat}.\n\nExport it again from a browser signed in to the studio account and paste it here. Nothing is collected from this medium until you do.",
         "data": {
           "reddit_cookie": "Reddit session cookie"
+        }
+      },
+      "reconfigure_medias": {
+        "title": "Media",
+        "description": "Change what the collector reads.",
+        "data": {
+          "medias": "Media to read"
         }
       }
     },

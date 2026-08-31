@@ -323,7 +323,30 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
     # le reste, et les identifiants se vérifient par un appel réel avant d'être
     # rangés. Les options portent des réglages, pas des clés.
 
+    # ── Reconfigurer : un menu, pas un couloir ──────────────────────────────
+    #
+    # Les quatre écrans étaient enchaînés : changer un bucket obligeait à
+    # retraverser les médias, Reddit et les cookies. Un couloir se traverse une
+    # fois à l'installation ; ensuite on vient pour un réglage précis, et
+    # l'imposer tous les quatre est la meilleure façon de rendre le quatrième
+    # introuvable.
+    #
+    # Chaque branche enregistre et rend la main. Rien n'est chaîné.
+
     async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entree = self._get_reconfigure_entry()
+        medias = list(entree.data.get(CONF_MEDIAS) or [])
+        choix = ["reconfigure_medias"]
+        if "reddit" in medias:
+            choix.append("reconfigure_reddit")
+        if any(m in medias for m in MEDIAS_A_COOKIE):
+            choix.append("reconfigure_cookies")
+        choix.append("reconfigure_stockage")
+        return self.async_show_menu(step_id="reconfigure", menu_options=choix)
+
+    async def async_step_reconfigure_medias(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         entree = self._get_reconfigure_entry()
@@ -333,13 +356,14 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             if not medias:
                 erreurs["base"] = "aucun_media"
             else:
-                self._donnees = {**entree.data, CONF_MEDIAS: medias}
-                if "reddit" in medias:
-                    return await self.async_step_reconfigure_reddit()
-                return await self.async_step_reconfigure_stockage()
+                candidat = {**entree.data, CONF_MEDIAS: medias}
+                if _sans_porte(candidat):
+                    erreurs["base"] = "reddit_sans_porte"
+                else:
+                    return self.async_update_reload_and_abort(entree, data=candidat)
 
         return self.async_show_form(
-            step_id="reconfigure",
+            step_id="reconfigure_medias",
             data_schema=self.add_suggested_values_to_schema(
                 SCHEMA_MEDIAS, {CONF_MEDIAS: entree.data.get(CONF_MEDIAS) or []}
             ),
@@ -352,12 +376,17 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
         entree = self._get_reconfigure_entry()
         erreurs: dict[str, str] = {}
         if user_input is not None:
-            erreur = await _essayer_reddit(self.hass, user_input)
+            erreur = await _essayer_reddit(
+                self.hass, {**entree.data, **user_input}
+            )
             if erreur:
                 erreurs["base"] = erreur
             else:
-                self._donnees.update(user_input)
-                return await self.async_step_reconfigure_cookies()
+                candidat = {**entree.data, **user_input}
+                if _sans_porte(candidat):
+                    erreurs["base"] = "reddit_sans_porte"
+                else:
+                    return self.async_update_reload_and_abort(entree, data=candidat)
 
         return self.async_show_form(
             step_id="reconfigure_reddit",
@@ -374,30 +403,52 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure_cookies(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        medias = self._donnees.get(CONF_MEDIAS) or []
-        if not any(m in medias for m in MEDIAS_A_COOKIE):
-            return await self.async_step_reconfigure_stockage()
-
+        entree = self._get_reconfigure_entry()
+        medias = list(entree.data.get(CONF_MEDIAS) or [])
         erreurs: dict[str, str] = {}
         if user_input is not None:
             valeurs, erreur = _valider_cookies(user_input, medias)
             if erreur:
                 erreurs["base"] = erreur
             else:
-                candidat = {**self._donnees, **valeurs}
+                candidat = {**entree.data, **valeurs}
                 if _sans_porte(candidat):
                     erreurs["base"] = "reddit_sans_porte"
                 else:
-                    self._donnees = candidat
-                    return await self.async_step_reconfigure_stockage()
+                    return self.async_update_reload_and_abort(entree, data=candidat)
 
         return self.async_show_form(
             step_id="reconfigure_cookies",
             data_schema=_schema_cookies(medias),
             errors=erreurs,
-            description_placeholders=_etat_des_cookies(
-                self._get_reconfigure_entry().data, medias
-            ),
+            description_placeholders=_etat_des_cookies(entree.data, medias),
+        )
+
+    async def async_step_reconfigure_stockage(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entree = self._get_reconfigure_entry()
+        erreurs: dict[str, str] = {}
+        if user_input is not None:
+            saisie = _nettoyer(user_input)
+            autres = [
+                c for c in INDISPENSABLES
+                if c != CONF_S3_SECRET_KEY and saisie.get(c)
+            ]
+            if autres and not saisie.get(CONF_S3_SECRET_KEY):
+                saisie[CONF_S3_SECRET_KEY] = entree.data.get(CONF_S3_SECRET_KEY, "")
+            erreur = await _valider_stockage(self.hass, saisie)
+            if erreur:
+                erreurs["base"] = erreur
+            else:
+                return self.async_update_reload_and_abort(
+                    entree, data={**entree.data, **saisie}
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure_stockage",
+            data_schema=_schema_stockage(entree.data),
+            errors=erreurs,
         )
 
     # ── Réauthentification : ce que Home Assistant déclenche tout seul ───────
@@ -435,43 +486,6 @@ class FluxDeConfiguration(ConfigFlow, domain=DOMAIN):
             data_schema=_schema_cookies(medias),
             errors=erreurs,
             description_placeholders=_etat_des_cookies(entree.data, medias),
-        )
-
-    async def async_step_reconfigure_stockage(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        entree = self._get_reconfigure_entry()
-        erreurs: dict[str, str] = {}
-        if user_input is not None:
-            # Le secret est le seul champ qui ne se réaffiche pas. Laissé vide
-            # alors que le reste est rempli, il veut dire « garde celui d'avant »
-            # — sinon rouvrir cet écran pour changer un préfixe obligerait à
-            # ressaisir une clé qu'on n'a peut-être plus sous la main.
-            #
-            # Il ne se recopie que si un autre champ est rempli. Sinon vider
-            # l'écran, qui est la façon de revenir au disque seul, remettrait
-            # une clé toute seule et l'écran refuserait une saisie incomplète
-            # que personne n'a faite.
-            saisie = _nettoyer(user_input)
-            autres = [
-                c for c in INDISPENSABLES
-                if c != CONF_S3_SECRET_KEY and saisie.get(c)
-            ]
-            if autres and not saisie.get(CONF_S3_SECRET_KEY):
-                saisie[CONF_S3_SECRET_KEY] = entree.data.get(CONF_S3_SECRET_KEY, "")
-            erreur = await _valider_stockage(self.hass, saisie)
-            if erreur:
-                erreurs["base"] = erreur
-            else:
-                return self.async_update_reload_and_abort(
-                    entree, data={**self._donnees, **saisie}
-                )
-
-        return self.async_show_form(
-            step_id="reconfigure_stockage",
-            data_schema=_schema_stockage(entree.data),
-            errors=erreurs,
-            last_step=True,
         )
 
     @staticmethod

@@ -141,6 +141,12 @@ bucket lui-même. Les deux écrans font un appel réel avant de ranger quoi que 
 soit : une clé fausse se voit à la saisie, pas le lendemain matin après une nuit
 sans relevé.
 
+**Une fois installé, tout se règle par ⋮ → Reconfigurer**, qui ouvre un menu :
+médias lus, client Reddit, cookies de session, stockage S3. Chaque branche
+enregistre et rend la main — changer un bucket n'oblige pas à retraverser le
+reste. (« Configurer », l'engrenage, ouvre les *options* : rythme, heure, agent,
+disposition.)
+
 **Le second écran se valide à vide.** Un bucket se provisionne par une chaîne
 d'infrastructure qui a son propre rythme, et le greffon doit pouvoir tourner
 avant : laisser les cinq champs vides installe une collecte sur disque seul. Le
@@ -303,7 +309,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Cent quatre-vingt-dix tests, dont la signature SigV4 recoupée contre le vecteur
+Cent quatre-vingt-quatorze tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**
