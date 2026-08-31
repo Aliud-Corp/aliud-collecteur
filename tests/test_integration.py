@@ -668,3 +668,63 @@ async def test_l_agent_des_options_ne_pilote_pas_reddit(hass):
 
     gets = [a for a in session.appels if a["methode"] == "GET"]
     assert gets[0]["entetes"]["User-Agent"] == DONNEES["reddit_user_agent"]
+
+
+async def test_reddit_retombe_sur_l_agent_global_quand_le_sien_est_vide(hass):
+    # Cocher Reddit depuis l'écran des médias enchaîne sur les cookies et ne
+    # passe jamais par celui qui demande son agent. Sans repli, le passage
+    # échouait sur un champ que rien n'avait proposé de remplir.
+    dossier = Path(hass.config.path("aliud_collecteur"))
+    dossier.mkdir(parents=True, exist_ok=True)
+    (dossier / "sources-reddit.txt").write_text("programming\n", encoding="utf-8")
+    # En mode cookie il n'y a pas de poignée de main : la première réponse est
+    # déjà le listing.
+    session = Session(
+        Reponse(200, listing(publication())), Reponse(200), Reponse(200)
+    )
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN,
+        data={**DONNEES, "reddit_user_agent": "", "reddit_client_id": "",
+              "reddit_client_secret": "", "reddit_cookie": "reddit_session=abc"},
+        options={**OPTIONS, "agent": "le-mien/1.0 (+https://exemple.net)"},
+    )
+    entree.add_to_hass(hass)
+    with patch(
+        "custom_components.aliud_collecteur.async_get_clientsession",
+        return_value=session,
+    ):
+        assert await hass.config_entries.async_setup(entree.entry_id)
+        await hass.async_block_till_done()
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["medias"]["reddit"]["erreur"] is None
+    assert bilan["medias"]["reddit"]["elements"] == 1
+    gets = [a for a in session.appels if a["methode"] == "GET"]
+    assert gets[0]["entetes"]["User-Agent"] == "le-mien/1.0 (+https://exemple.net)"
+
+
+async def test_un_media_rate_parmi_trois_rend_un_passage_partiel(hass):
+    # 1 732 éléments rentrés et un média muet n'est pas un passage raté. Dire
+    # « echec » ferait chercher une panne générale pour un cookie manquant.
+    session = Session(
+        Reponse(200, _hn()), Reponse(200), Reponse(200),   # hackernews : complet
+        Reponse(500), Reponse(500), Reponse(500),          # lobsters : à terre
+    )
+    await _monter_medias(
+        hass, session, ["hackernews", "lobsters"],
+        {"hackernews": "front_page\n", "lobsters": "hottest\n"},
+    )
+    bilan = await _collecter(hass, session)
+
+    assert bilan["medias"]["hackernews"]["resultat"] == "succes"
+    assert bilan["medias"]["lobsters"]["resultat"] in ("partiel", "echec")
+    assert bilan["resultat"] == "partiel"
+    assert bilan["elements"] == 1
+
+
+async def test_tous_les_medias_a_terre_reste_un_echec(hass):
+    session = Session(Reponse(500), Reponse(500), Reponse(500))
+    await _monter_medias(hass, session, ["lobsters"], {"lobsters": "hottest\n"})
+    bilan = await _collecter(hass, session)
+    assert bilan["resultat"] == "echec"

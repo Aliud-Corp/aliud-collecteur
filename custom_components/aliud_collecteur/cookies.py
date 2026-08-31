@@ -108,7 +108,7 @@ def lire(brut: str, media: str = "") -> Cookie:
     return Cookie(
         entete="; ".join(f"{nom}={valeur}" for nom, valeur, _ in paires),
         noms=noms,
-        expire_le=_plus_proche(paires, essentiels),
+        expire_le=_expiration(regle, essentiels, paires),
         manquants=_manquants(regle, essentiels, noms),
     )
 
@@ -189,13 +189,21 @@ def _du_bon_domaine(domaine: str, media: str) -> bool:
     return any(domaine == a or domaine.endswith(f".{a}") for a in attendus)
 
 
-def _plus_proche(
-    paires: list[tuple[str, str, float | None]], essentiels: tuple[str, ...]
+def _expiration(
+    regle: str,
+    essentiels: tuple[str, ...],
+    paires: list[tuple[str, str, float | None]],
 ) -> str:
-    """La première expiration parmi les cookies qui comptent.
+    """Quand la session cesse d'être utilisable, selon la règle du média.
 
-    Parmi les essentiels quand on sait lesquels ils sont : un cookie de
-    préférence d'affichage qui meurt demain ne dit rien de la session.
+    Un cookie de préférence d'affichage qui meurt demain ne dit rien de la
+    session : seuls les essentiels comptent, quand on sait lesquels ils sont.
+
+    Et le sens de la comparaison suit la règle, ce qui n'est pas un détail.
+    Sous `tous`, la session meurt avec le premier qui tombe. Sous `un`, elle
+    vit tant qu'il en reste un — chez Reddit, `token_v2` dure vingt-quatre
+    heures et `reddit_session` six mois, alors prendre le plus proche
+    réclamerait un nouvel export chaque matin pour une session encore bonne.
     """
     retenus = [
         e for nom, _, e in paires
@@ -203,7 +211,8 @@ def _plus_proche(
     ]
     if not retenus:
         return ""
-    return datetime.fromtimestamp(min(retenus), tz=timezone.utc).isoformat(
+    borne = max(retenus) if regle == "un" else min(retenus)
+    return datetime.fromtimestamp(borne, tz=timezone.utc).isoformat(
         timespec="seconds"
     )
 

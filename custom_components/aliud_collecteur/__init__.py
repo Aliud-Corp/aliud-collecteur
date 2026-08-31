@@ -368,7 +368,12 @@ class Passeur:
             return Reddit(
                 client_id=d.get(CONF_REDDIT_CLIENT_ID, ""),
                 client_secret=d.get(CONF_REDDIT_CLIENT_SECRET, ""),
-                user_agent=d.get(CONF_REDDIT_USER_AGENT, ""),
+                # L'agent propre à Reddit est une surcharge, pas une exigence :
+                # cocher Reddit depuis l'écran des médias enchaîne sur les
+                # cookies et ne passe jamais par celui qui le demande. Sans ce
+                # repli, le passage échouait sur « user_agent absent » pour un
+                # champ que rien n'avait proposé de remplir.
+                user_agent=str(d.get(CONF_REDDIT_USER_AGENT) or "").strip() or agent,
                 noms=noms,
                 par_source=par_source,
                 fenetre=o.get(OPT_FENETRE, FENETRE_DEFAUT),
@@ -582,12 +587,21 @@ def _agreger(bilans: list[Bilan]) -> Bilan:
     """
     if not bilans:
         return Bilan(media="")
+    # Le pire, avec une nuance : `echec` ne vaut que si **tout** a échoué. Un
+    # média muet quand trois autres ont rendu mille sept cents éléments est un
+    # passage partiel, pas un passage raté, et l'écrire autrement ferait
+    # chercher une panne générale pour un cookie manquant.
+    rates = [b for b in bilans if b.resultat == RESULTAT_ECHEC]
+    if rates and len(rates) < len(bilans):
+        pire = RESULTAT_PARTIEL
+    else:
+        pire = max(bilans, key=lambda b: SEVERITE_RESULTAT.get(b.resultat, 2)).resultat
     pire_resultat = max(bilans, key=lambda b: SEVERITE_RESULTAT.get(b.resultat, 2))
     pire_depot = max(bilans, key=lambda b: SEVERITE_DEPOT.get(b.depot, 2))
     erreurs = [f"{b.media} : {b.erreur}" for b in bilans if b.erreur]
     return Bilan(
         media=", ".join(b.media for b in bilans),
-        resultat=pire_resultat.resultat,
+        resultat=pire,
         depot=pire_depot.depot,
         debut=min((b.debut for b in bilans if b.debut), default=""),
         fin=max((b.fin for b in bilans if b.fin), default=""),

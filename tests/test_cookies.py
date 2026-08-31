@@ -179,3 +179,40 @@ def test_x_accepte_les_deux_ensemble():
         '{"name":"ct0","value":"b","domain":".x.com"}]'
     )
     assert lire(charge, "x").manquants == []
+
+
+# ── L'expiration suit la règle du média ─────────────────────────────────────
+#
+# Trouvé sur un export réel : `token_v2` dure vingt-quatre heures et
+# `reddit_session` six mois. Prendre le plus proche réclamait un nouvel export
+# chaque matin pour une session encore bonne.
+
+def _deux(a_nom, a_exp, b_nom, b_exp, domaine=".reddit.com"):
+    return (
+        f'[{{"name":"{a_nom}","value":"a","domain":"{domaine}","expirationDate":{a_exp}}},'
+        f'{{"name":"{b_nom}","value":"b","domain":"{domaine}","expirationDate":{b_exp}}}]'
+    )
+
+
+DEMAIN = (datetime.now(timezone.utc) + timedelta(days=1)).timestamp()
+DANS_180_JOURS = (datetime.now(timezone.utc) + timedelta(days=180)).timestamp()
+
+
+def test_sous_la_regle_un_la_session_vit_tant_qu_il_en_reste_un():
+    c = lire(_deux("token_v2", DEMAIN, "reddit_session", DANS_180_JOURS), "reddit")
+    assert 179 <= (c.jours_restants or 0) <= 180, (
+        "reddit_session tient six mois, token_v2 vingt-quatre heures"
+    )
+
+
+def test_sous_la_regle_tous_la_session_meurt_avec_le_premier():
+    c = lire(_deux("auth_token", DANS_180_JOURS, "ct0", DEMAIN, ".x.com"), "x")
+    assert (c.jours_restants or 0) <= 1, "X se sert des deux, le premier tombé décide"
+
+
+def test_un_seul_cookie_date_donne_sa_propre_date():
+    charge = (
+        '[{"name":"reddit_session","value":"a","domain":".reddit.com",'
+        f'"expirationDate":{DANS_180_JOURS}}}]'
+    )
+    assert 179 <= (lire(charge, "reddit").jours_restants or 0) <= 180
