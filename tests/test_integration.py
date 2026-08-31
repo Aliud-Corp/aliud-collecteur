@@ -600,3 +600,71 @@ async def test_la_disposition_choisie_atteint_la_cle_deposee(hass):
     cle = bilan["medias"]["reddit"]["cle_s3"]
     assert cle.startswith("archives/20"), cle
     assert "/reddit/reddit-" in cle
+
+
+# ── L'agent déclaré ─────────────────────────────────────────────────────────
+#
+# Réglable dans les options depuis la v0.8.0. Avant, les quatre médias ouverts
+# héritaient du champ « agent Reddit » : un réglage nommé pour un média en
+# pilotait quatre autres, ce que personne n'aurait deviné en le lisant.
+
+async def _agent_envoye(hass, media, reponse, options=None):
+    dossier = Path(hass.config.path("aliud_collecteur"))
+    dossier.mkdir(parents=True, exist_ok=True)
+    (dossier / f"sources-{media}.txt").write_text("une-source\n", encoding="utf-8")
+    session = Session(reponse, Reponse(200), Reponse(200))
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN,
+        data={**DONNEES, "medias": [media]},
+        options={**OPTIONS, **(options or {})},
+    )
+    entree.add_to_hass(hass)
+    with patch(
+        "custom_components.aliud_collecteur.async_get_clientsession",
+        return_value=session,
+    ):
+        assert await hass.config_entries.async_setup(entree.entry_id)
+        await hass.async_block_till_done()
+    await _collecter(hass, session)
+    return [a for a in session.appels if a["methode"] == "GET"][0]["entetes"]["User-Agent"]
+
+
+async def test_l_agent_des_options_atteint_les_medias_ouverts(hass):
+    envoye = await _agent_envoye(
+        hass, "lobsters", Reponse(200, []), {"agent": "le-mien/1.0 (+https://exemple.net)"}
+    )
+    assert envoye == "le-mien/1.0 (+https://exemple.net)"
+
+
+async def test_un_agent_vide_retombe_sur_celui_du_greffon(hass):
+    envoye = await _agent_envoye(hass, "lobsters", Reponse(200, []), {"agent": "   "})
+    assert envoye.startswith("aliud-collecteur/")
+
+
+async def test_sans_reglage_l_agent_reste_celui_du_greffon(hass):
+    envoye = await _agent_envoye(hass, "lobsters", Reponse(200, []))
+    assert envoye.startswith("aliud-collecteur/")
+
+
+async def test_l_agent_des_options_ne_pilote_pas_reddit(hass):
+    # Reddit garde le sien : son API exige une forme précise et refuse un agent
+    # générique. Deux champs, deux contrats.
+    session = _session_nominale(1, puts=[])
+    entree = MockConfigEntry(
+        domain=DOMAIN, unique_id=DOMAIN, data=DONNEES,
+        options={**OPTIONS, "agent": "le-mien/1.0"},
+    )
+    dossier = Path(hass.config.path("aliud_collecteur"))
+    dossier.mkdir(parents=True, exist_ok=True)
+    (dossier / "sources-reddit.txt").write_text("programming\n", encoding="utf-8")
+    entree.add_to_hass(hass)
+    with patch(
+        "custom_components.aliud_collecteur.async_get_clientsession",
+        return_value=session,
+    ):
+        assert await hass.config_entries.async_setup(entree.entry_id)
+        await hass.async_block_till_done()
+    await _collecter(hass, session)
+
+    gets = [a for a in session.appels if a["methode"] == "GET"]
+    assert gets[0]["entetes"]["User-Agent"] == DONNEES["reddit_user_agent"]

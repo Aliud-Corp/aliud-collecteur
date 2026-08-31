@@ -30,8 +30,17 @@ CONF_MEDIAS = "medias"
 # Ce que les trois médias ouverts envoient comme agent. Il se nomme et il porte
 # une adresse : un opérateur qui veut savoir qui le lit doit pouvoir le demander.
 AGENT_PAR_DEFAUT = (
-    "aliud-collecteur/0.3 (+https://github.com/Aliud-Corp/aliud-collecteur)"
+    "aliud-collecteur/0.8 (+https://github.com/Aliud-Corp/aliud-collecteur)"
 )
+
+# L'agent est réglable dans les options, et ce défaut n'est qu'un défaut. Il se
+# nomme et il porte une adresse pour une raison pratique : un opérateur qui veut
+# savoir qui le lit doit pouvoir le demander, et un agent joignable se fait
+# rarement bloquer sans qu'on lui écrive d'abord.
+#
+# Ce qui est mis à la place regarde celui qui exploite l'installation. Reddit
+# garde le sien, dans `data` : son API exige une forme précise et le refuse
+# générique, donc les deux champs ne disent pas la même chose.
 
 # ── Configuration, telle que le config flow la range ────────────────────────
 CONF_REDDIT_CLIENT_ID = "reddit_client_id"
@@ -89,6 +98,7 @@ OPT_FENETRE_JOURS = "fenetre_jours"
 OPT_GARDER_BRUT = "garder_brut"
 OPT_RELEVES_GARDES = "releves_gardes"
 OPT_DISPOSITION = "disposition"
+OPT_AGENT = "agent"
 
 HEURE_DEFAUT = 6
 MINUTE_DEFAUT = 30

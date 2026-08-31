@@ -82,6 +82,7 @@ from .const import (
     GARDER_BRUT_DEFAUT,
     GIGUE_MAX_DEFAUT,
     GIGUE_MIN_DEFAUT,
+    AGENT_PAR_DEFAUT,
     HEURE_DEFAUT,
     MEDIAS,
     MEDIAS_A_COOKIE,
@@ -90,6 +91,7 @@ from .const import (
     cle_expiration,
     MINUTE_DEFAUT,
     NOM,
+    OPT_AGENT,
     OPT_BUDGET,
     OPT_DEBIT,
     OPT_DISPOSITION,
@@ -536,6 +538,7 @@ class FluxDOptions(OptionsFlow):
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),
+                vol.Required(OPT_AGENT, default=o.get(OPT_AGENT) or AGENT_PAR_DEFAUT): _TEXTE,
                 vol.Required(OPT_DISPOSITION, default=o.get(OPT_DISPOSITION, DISPOSITION_DEFAUT)): SelectSelector(
                     SelectSelectorConfig(
                         options=list(DISPOSITIONS),

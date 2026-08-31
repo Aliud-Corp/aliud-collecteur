@@ -179,6 +179,14 @@ zéro point — donc n'en pose pas là.
 
 ### Les options
 
+**L'agent déclaré** se règle ici, et il vaut pour RSS, Arctic Shift, Hacker News
+et Lobsters. Reddit garde le sien, saisi à part : son API exige une forme précise
+et refuse un agent générique.
+
+Le défaut se nomme et porte l'adresse du dépôt — un agent joignable se fait
+rarement bloquer sans qu'on lui écrive d'abord. Ce qu'on met à la place regarde
+celui qui exploite l'installation.
+
 Heure du passage, requêtes par minute, gigue, tentatives par source, budget d'un
 passage, éléments par source, **décalage et fenêtre en jours** pour Arctic Shift
 et Hacker News, fenêtre du classement pour Reddit, nombre de relevés gardés
@@ -295,7 +303,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Cent quatre-vingt-six tests, dont la signature SigV4 recoupée contre le vecteur
+Cent quatre-vingt-dix tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**

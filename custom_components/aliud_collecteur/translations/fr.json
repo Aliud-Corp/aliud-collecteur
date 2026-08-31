@@ -128,13 +128,15 @@
           "garder_brut": "Garder la charge d'origine",
           "decalage_jours": "Décalage (jours)",
           "fenetre_jours": "Fenêtre (jours)",
-          "disposition": "Disposition dans le bucket"
+          "disposition": "Disposition dans le bucket",
+          "agent": "Agent déclaré"
         },
         "data_description": {
           "budget_secondes": "Passé ce délai, le relevé sort avec ce qu'il a, les sources non lues sont nommées, et elles repassent en tête au passage suivant.",
           "garder_brut": "L'archive est brute : couper la charge d'origine allège les fichiers mais ne se répare pas rétroactivement.",
           "decalage_jours": "Arctic Shift capture une publication à sa création puis la recapture plus tard : à J-0 les scores sont tous à un point, à J-3 ils sont mûrs. Classer la veille reviendrait à classer des zéros.",
-          "disposition": "Ce qu'un `ls` de préfixe rend. Par média : tout ce qu'une source a rendu. Par date : tout ce qui est tombé un jour donné, médias confondus."
+          "disposition": "Ce qu'un `ls` de préfixe rend. Par média : tout ce qu'une source a rendu. Par date : tout ce qui est tombé un jour donné, médias confondus.",
+          "agent": "Ce que le collecteur annonce à RSS, Arctic Shift, Hacker News et Lobsters. Reddit garde le sien, saisi à part : son API exige une forme précise et refuse un agent générique.\n\nLe défaut se nomme et porte une adresse, pour qu'un opérateur qui veut savoir qui le lit puisse écrire. Ce que tu mets à la place te regarde."
         }
       }
     }

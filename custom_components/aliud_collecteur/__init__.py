@@ -77,6 +77,7 @@ from .const import (
     GIGUE_MIN_DEFAUT,
     HEURE_DEFAUT,
     MINUTE_DEFAUT,
+    OPT_AGENT,
     OPT_BUDGET,
     OPT_DEBIT,
     OPT_DISPOSITION,
@@ -352,7 +353,10 @@ class Passeur:
         """
         d = self.entry.data
         o = self.entry.options
-        agent = d.get(CONF_REDDIT_USER_AGENT) or AGENT_PAR_DEFAUT
+        # L'agent des médias ouverts vient des options. Avant, il venait du
+        # champ « agent Reddit » : un réglage nommé pour un média en pilotait
+        # quatre autres, ce que personne n'aurait deviné en le lisant.
+        agent = str(o.get(OPT_AGENT) or "").strip() or AGENT_PAR_DEFAUT
         par_source = int(o.get(OPT_PAR_SOURCE, PAR_SOURCE_DEFAUT))
 
         if media == "reddit":
