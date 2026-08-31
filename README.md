@@ -8,7 +8,7 @@ d'autres sans rouvrir l'ordonnanceur.
 L'archive est brute : rien n'est filtré ni jugé à la collecte. Ce qui en est fait
 se décide en aval, sur le bucket.
 
-## Les cinq médias
+## Les six médias
 
 | Média | Identifiants | Ce qu'il rend |
 |---|---|---|
@@ -16,6 +16,7 @@ se décide en aval, sur le bucket.
 | **Arctic Shift** | aucun | Les publications Reddit, servies par un tiers. Décalées de deux jours |
 | **Hacker News** | aucun | La page d'accueil et des recherches, par l'index Algolia. Scores réels, fraîcheur immédiate |
 | **Lobsters** | aucun | `hottest`, `newest`, et les fils d'étiquette, par le JSON public |
+| **X** | cookie de session | Les publications récentes d'un compte. Fragile — voir plus bas |
 | **Reddit** | client OAuth **ou** cookie de session | En direct. Sa porte s'est refermée au client anonyme — voir ci-dessous |
 
 Chacun a sa liste de sources, son relevé et sa clé de dépôt. Un passage les lit
@@ -83,6 +84,31 @@ création puis la recapture plus tard. Mesuré sur r/programming le 29/08/2026 :
 Un « top du jour » lu là serait donc un classement de zéros. La fenêtre est
 décalée de deux jours par défaut, et le relevé porte ses deux bornes pour que
 personne ne la prenne pour hier.
+
+## X, et pourquoi il est le plus fragile des six
+
+Autorisé par la clause 4 de l'ADR 0034 : un cookie de session d'un compte du
+studio. Ce que ça coûte est écrit là-bas — les conditions d'usage de X
+l'interdisent, et le compte encourt la suspension.
+
+**Pas de Playwright.** La voie répandue lance un Chromium piloté : un binaire par
+architecture, sur une machine qui tourne souvent sur carte SD, dans une
+intégration à `requirements` vide. Ce collecteur parle HTTP.
+
+**Ce qui le rend fragile, dit avant d'être découvert.** X ne publie pas d'API
+pour ça. Les points d'entrée lus sont ceux de sa propre interface web, et leurs
+identifiants de requête changent à chaque build de leur frontend. Quand ça
+arrive, toutes les sources X rendent `404` et le relevé les déclare muettes.
+**Les identifiants sont donc des réglages**, dans les options : une rotation se
+répare à l'écran, sans attendre une version du greffon.
+
+Le cookie doit porter `auth_token` et `ct0` — le second sert deux fois, comme
+cookie et comme en-tête anti-CSRF, et son absence produit un `403` que rien ne
+rattache à une saisie incomplète. Le collecteur le vérifie à l'ouverture.
+
+> **Jamais essayé contre une vraie session.** Écrit contre la forme documentée
+> des réponses, testé contre des charges fabriquées. Le premier passage réel dira
+> ce qui manque.
 
 ## Ce qu'elle fait
 
@@ -309,7 +335,7 @@ uv pip install --python .venv/bin/python homeassistant==2026.8.3 pytest-homeassi
 .venv/bin/python -m pytest
 ```
 
-Cent quatre-vingt-quatorze tests, dont la signature SigV4 recoupée contre le vecteur
+Deux cent huit tests, dont la signature SigV4 recoupée contre le vecteur
 publié par AWS. Chaque cas de l'ordonnanceur a rougi contre une cassure volontaire, le
 28/08/2026, listée en tête de `tests/test_ordonnanceur.py` : **un test qui n'a
 jamais échoué n'a rien prouvé.**

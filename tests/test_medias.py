@@ -14,7 +14,9 @@ import time
 import pytest
 
 from custom_components.aliud_collecteur.collecteurs import (
+    PassageImpossible,
     REGISTRE,
+    SessionTombee,
     decouper_plancher,
     Source,
     SourceMuette,
@@ -24,6 +26,7 @@ from custom_components.aliud_collecteur.collecteurs.arctic import ArcticShift
 from custom_components.aliud_collecteur.collecteurs.hackernews import HackerNews
 from custom_components.aliud_collecteur.collecteurs.lobsters import Lobsters
 from custom_components.aliud_collecteur.collecteurs.rss import OCTETS_MAX, Rss
+from custom_components.aliud_collecteur.collecteurs.x import X
 from tests.faux_reseau import Reponse, Session
 
 AGENT = "aliud-collecteur/0.3 (+https://exemple)"
@@ -35,8 +38,8 @@ def _src(media, nom):
 
 # ── Le registre ─────────────────────────────────────────────────────────────
 
-def test_les_cinq_medias_sont_enregistres():
-    assert set(REGISTRE) == {"rss", "arctic", "hackernews", "lobsters", "reddit"}
+def test_les_six_medias_sont_enregistres():
+    assert set(REGISTRE) == {"rss", "arctic", "hackernews", "lobsters", "reddit", "x"}
     for nom, classe in REGISTRE.items():
         assert classe.media == nom, "un collecteur rangé sous un autre nom que le sien"
 
@@ -415,3 +418,154 @@ async def test_rss_accepte_un_flux_vide_sans_le_confondre_avec_une_panne():
     vide = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>x</title></feed>'
     moisson, _, _ = await _flux(vide.encode())
     assert moisson.elements == [], "un flux sans entrée est un flux, pas une panne"
+
+
+# ── X ───────────────────────────────────────────────────────────────────────
+#
+# Jamais essayé contre une vraie session : ces cas fixent la forme documentée
+# des réponses et les trois choses qui font qu'un passage s'arrête proprement.
+
+COOKIE_X = "auth_token=aaa; ct0=bbb; guest_id=ccc"
+
+
+def _tweet(**r):
+    d = {
+        "rest_id": "1780000000000000000",
+        "core": {"user_results": {"result": {"legacy": {"screen_name": "simonw"}}}},
+        "legacy": {
+            "id_str": "1780000000000000000",
+            "full_text": "Une publication\nsur deux lignes",
+            "favorite_count": 412,
+            "reply_count": 18,
+            "retweet_count": 57,
+            "created_at": "Thu Aug 28 15:17:09 +0000 2026",
+        },
+    }
+    return {**d, **r}
+
+
+def _fil(*tweets):
+    """La forme empilée que rend UserTweets, instructions comprises."""
+    return {"data": {"user": {"result": {"timeline_v2": {"timeline": {
+        "instructions": [{"type": "TimelineAddEntries", "entries": [
+            {"content": {"itemContent": {"tweet_results": {"result": t}}}}
+            for t in tweets
+        ]}]
+    }}}}}}
+
+
+def _compte(identifiant="44196397"):
+    return {"data": {"user": {"result": {"rest_id": identifiant}}}}
+
+
+def _x(**r):
+    return X(**{**dict(agent=AGENT, noms=["simonw"], cookie=COOKIE_X), **r})
+
+
+async def test_x_exige_un_cookie():
+    session = Session()
+    with pytest.raises(PassageImpossible) as capture:
+        await _x(cookie="").ouvrir(session)
+    assert "aucun cookie" in str(capture.value)
+    assert session.appels == []
+
+
+@pytest.mark.parametrize("cookie", ["ct0=bbb", "auth_token=aaa", "guest_id=ccc"])
+async def test_un_cookie_ampute_est_refuse_avec_son_motif(cookie):
+    with pytest.raises(PassageImpossible) as capture:
+        await _x(cookie=cookie).ouvrir(Session())
+    assert "auth_token et ct0" in str(capture.value)
+
+
+async def test_le_jeton_anti_csrf_est_tire_du_cookie_et_porte_deux_fois():
+    session = Session(Reponse(200, _compte()), Reponse(200, _fil(_tweet())))
+    collecteur = _x()
+    ctx = await collecteur.ouvrir(session)
+    assert ctx.csrf == "bbb"
+    await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+
+    entetes = session.appels[0]["entetes"]
+    assert entetes["x-csrf-token"] == "bbb"
+    assert entetes["Cookie"] == COOKIE_X
+    assert entetes["Authorization"].startswith("Bearer ")
+
+
+async def test_x_normalise_une_publication():
+    session = Session(Reponse(200, _compte()), Reponse(200, _fil(_tweet())))
+    collecteur = _x()
+    ctx = await collecteur.ouvrir(session)
+    e = (await collecteur.moissonner(session, ctx, _src("x", "simonw"))).elements[0]
+
+    assert e.media == "x"
+    assert e.identifiant == "1780000000000000000"
+    assert e.titre == "Une publication sur deux lignes"
+    assert e.auteur == "simonw"
+    assert e.url == e.permalien == "https://x.com/simonw/status/1780000000000000000"
+    assert e.points == 412
+    assert e.commentaires == 18 + 57, "réponses et reprises comptent ensemble"
+    assert e.cree_le == "2026-08-28T15:17:09+00:00"
+
+
+async def test_le_compte_n_est_resolu_qu_une_fois_par_passage():
+    session = Session(
+        Reponse(200, _compte()), Reponse(200, _fil(_tweet())), Reponse(200, _fil())
+    )
+    collecteur = _x(noms=["simonw"])
+    ctx = await collecteur.ouvrir(session)
+    await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+    await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+
+    resolutions = [a for a in session.appels if "UserByScreenName" in a["url"]]
+    assert len(resolutions) == 1
+
+
+async def test_une_publication_sans_bloc_legacy_est_ecartee():
+    ampute = _tweet(); ampute.pop("legacy"); ampute.pop("rest_id")
+    session = Session(Reponse(200, _compte()), Reponse(200, _fil(ampute, _tweet())))
+    collecteur = _x()
+    ctx = await collecteur.ouvrir(session)
+    moisson = await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+    assert len(moisson.elements) == 1
+
+
+@pytest.mark.parametrize("code", [401, 403])
+async def test_une_session_x_tombee_arrete_le_passage(code):
+    session = Session(Reponse(code))
+    collecteur = _x()
+    ctx = await collecteur.ouvrir(session)
+    with pytest.raises(SessionTombee):
+        await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+
+
+async def test_un_identifiant_de_requete_perime_se_dit_comme_tel():
+    session = Session(Reponse(404))
+    collecteur = _x()
+    ctx = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette) as capture:
+        await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+    assert "tourné" in str(capture.value)
+    assert "options" in str(capture.value)
+
+
+async def test_les_identifiants_de_requete_sont_reglables():
+    session = Session(Reponse(200, _compte()), Reponse(200, _fil()))
+    collecteur = _x(query_compte="AAA", query_fil="BBB", bearer="Bearer zzz")
+    ctx = await collecteur.ouvrir(session)
+    await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+
+    assert "/AAA/UserByScreenName" in session.appels[0]["url"]
+    assert "/BBB/UserTweets" in session.appels[1]["url"]
+    assert session.appels[0]["entetes"]["Authorization"] == "Bearer zzz"
+
+
+async def test_un_compte_introuvable_est_muet_pas_fatal():
+    session = Session(Reponse(200, {"data": {"user": {}}}))
+    collecteur = _x()
+    ctx = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette):
+        await collecteur.moissonner(session, ctx, _src("x", "inexistant"))
+
+
+async def test_l_arobase_et_le_plancher_se_lisent_dans_la_source():
+    sources = X(agent=AGENT, noms=["@simonw", "karpathy@500"], cookie=COOKIE_X).sources()
+    assert [(s.nom, s.plancher) for s in sources] == [("simonw", 0), ("karpathy", 500)]

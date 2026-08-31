@@ -22,7 +22,7 @@ PLATEFORMES = ["sensor"]
 # parce qu'il est le seul à exiger des identifiants, et le seul dont la porte
 # peut se refermer sans prévenir — relevé du 29/08/2026 : reddit.com bloque un
 # client anonyme au niveau réseau, `robots.txt` compris.
-MEDIAS = ("rss", "arctic", "hackernews", "lobsters", "reddit")
+MEDIAS = ("rss", "arctic", "hackernews", "lobsters", "reddit", "x")
 MEDIAS_SANS_IDENTIFIANTS = ("rss", "arctic", "hackernews", "lobsters")
 
 CONF_MEDIAS = "medias"
@@ -54,7 +54,7 @@ CONF_REDDIT_COOKIE = "reddit_cookie"
 
 # Les médias qui savent lire un cookie. `x` y figure avant son collecteur : ce
 # qui manque à X est le code qui moissonne, pas la place où ranger sa session.
-MEDIAS_A_COOKIE = ("reddit",)
+MEDIAS_A_COOKIE = ("reddit", "x")
 
 
 def cle_cookie(media: str) -> str:
@@ -99,6 +99,13 @@ OPT_GARDER_BRUT = "garder_brut"
 OPT_RELEVES_GARDES = "releves_gardes"
 OPT_DISPOSITION = "disposition"
 OPT_AGENT = "agent"
+
+# Les points d'entrée internes de X. Réglages et non constantes : leurs
+# identifiants de requête tournent à chaque build de son interface, et une
+# rotation doit se réparer à l'écran, pas dans une version du greffon.
+OPT_X_BEARER = "x_bearer"
+OPT_X_QUERY_COMPTE = "x_query_compte"
+OPT_X_QUERY_FIL = "x_query_fil"
 
 HEURE_DEFAUT = 6
 MINUTE_DEFAUT = 30

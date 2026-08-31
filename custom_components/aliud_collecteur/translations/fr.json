@@ -75,21 +75,33 @@
         "title": "Cookies de session",
         "description": "Colle ce que ton navigateur exporte, dans **n'importe lequel des trois formats** : la ligne d'en-tête `nom=valeur; nom=valeur`, un export JSON d'extension (Cookie-Editor), ou un fichier `cookies.txt`. Les cookies d'un autre site sont écartés, et la date d'expiration est retenue quand l'export la porte.\n\nVider le champ efface le cookie rangé.",
         "data": {
-          "reddit_cookie": "Cookie de session Reddit"
+          "reddit_cookie": "Cookie de session Reddit",
+          "x_cookie": "Cookie de session X"
+        },
+        "data_description": {
+          "x_cookie": "Doit porter `auth_token` et `ct0`. Sans les deux, X répond 403 et rien ne le rattache à une saisie incomplète."
         }
       },
       "reconfigure_cookies": {
         "title": "Cookies de session",
         "description": "État actuel — {etat}\n\nColle ce que ton navigateur exporte, dans **n'importe lequel des trois formats** : la ligne d'en-tête `nom=valeur; nom=valeur`, un export JSON d'extension (Cookie-Editor), ou un fichier `cookies.txt`. Les cookies d'un autre site sont écartés, et la date d'expiration est retenue quand l'export la porte.\n\nVider le champ efface le cookie rangé.",
         "data": {
-          "reddit_cookie": "Cookie de session Reddit"
+          "reddit_cookie": "Cookie de session Reddit",
+          "x_cookie": "Cookie de session X"
+        },
+        "data_description": {
+          "x_cookie": "Doit porter `auth_token` et `ct0`. Sans les deux, X répond 403 et rien ne le rattache à une saisie incomplète."
         }
       },
       "reauth_confirm": {
         "title": "Session à refaire",
         "description": "La session n'est plus reconnue — {etat}.\n\nRefais l'export depuis un navigateur connecté au compte du studio et colle-le ici. Rien n'est collecté sur ce média tant que ce n'est pas fait.",
         "data": {
-          "reddit_cookie": "Cookie de session Reddit"
+          "reddit_cookie": "Cookie de session Reddit",
+          "x_cookie": "Cookie de session X"
+        },
+        "data_description": {
+          "x_cookie": "Doit porter `auth_token` et `ct0`. Sans les deux, X répond 403 et rien ne le rattache à une saisie incomplète."
         }
       },
       "reconfigure_medias": {
@@ -138,14 +150,18 @@
           "decalage_jours": "Décalage (jours)",
           "fenetre_jours": "Fenêtre (jours)",
           "disposition": "Disposition dans le bucket",
-          "agent": "Agent déclaré"
+          "agent": "Agent déclaré",
+          "x_query_compte": "X — requête « compte »",
+          "x_query_fil": "X — requête « fil »",
+          "x_bearer": "X — jeton public"
         },
         "data_description": {
           "budget_secondes": "Passé ce délai, le relevé sort avec ce qu'il a, les sources non lues sont nommées, et elles repassent en tête au passage suivant.",
           "garder_brut": "L'archive est brute : couper la charge d'origine allège les fichiers mais ne se répare pas rétroactivement.",
           "decalage_jours": "Arctic Shift capture une publication à sa création puis la recapture plus tard : à J-0 les scores sont tous à un point, à J-3 ils sont mûrs. Classer la veille reviendrait à classer des zéros.",
           "disposition": "Ce qu'un `ls` de préfixe rend. Par média : tout ce qu'une source a rendu. Par date : tout ce qui est tombé un jour donné, médias confondus.",
-          "agent": "Ce que le collecteur annonce à RSS, Arctic Shift, Hacker News et Lobsters. Reddit garde le sien, saisi à part : son API exige une forme précise et refuse un agent générique.\n\nLe défaut se nomme et porte une adresse, pour qu'un opérateur qui veut savoir qui le lit puisse écrire. Ce que tu mets à la place te regarde."
+          "agent": "Ce que le collecteur annonce à RSS, Arctic Shift, Hacker News et Lobsters. Reddit garde le sien, saisi à part : son API exige une forme précise et refuse un agent générique.\n\nLe défaut se nomme et porte une adresse, pour qu'un opérateur qui veut savoir qui le lit puisse écrire. Ce que tu mets à la place te regarde.",
+          "x_query_compte": "Laisser vide sauf panne. X ne publie pas d'API pour ça : les points d'entrée lus sont ceux de son interface web, et leurs identifiants changent à chaque build. Un `404` sur toutes les sources X veut dire qu'ils ont tourné — ils se réparent ici, sans attendre une version du greffon."
         }
       }
     }
@@ -196,7 +212,8 @@
         "arctic": "Arctic Shift — Reddit, en différé",
         "hackernews": "Hacker News",
         "lobsters": "Lobsters",
-        "reddit": "Reddit — demande un client enregistré"
+        "reddit": "Reddit — demande un client enregistré",
+        "x": "X — demande un cookie de session"
       }
     },
     "disposition": {

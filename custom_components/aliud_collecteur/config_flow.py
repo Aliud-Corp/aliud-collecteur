@@ -106,6 +106,9 @@ from .const import (
     OPT_PAR_SOURCE,
     OPT_RELEVES_GARDES,
     OPT_TENTATIVES,
+    OPT_X_BEARER,
+    OPT_X_QUERY_COMPTE,
+    OPT_X_QUERY_FIL,
     PAR_SOURCE_DEFAUT,
     RELEVES_GARDES_DEFAUT,
     TENTATIVES_DEFAUT,
@@ -560,6 +563,12 @@ class FluxDOptions(OptionsFlow):
                         translation_key="disposition",
                     )
                 ),
+                # Les points d'entrée de X. Vides, les défauts du code servent ;
+                # remplis, ils les remplacent — c'est la réparation d'une
+                # rotation d'identifiant sans attendre une version.
+                vol.Optional(OPT_X_QUERY_COMPTE, default=o.get(OPT_X_QUERY_COMPTE, "")): _TEXTE,
+                vol.Optional(OPT_X_QUERY_FIL, default=o.get(OPT_X_QUERY_FIL, "")): _TEXTE,
+                vol.Optional(OPT_X_BEARER, default=o.get(OPT_X_BEARER, "")): _TEXTE,
                 vol.Required(OPT_RELEVES_GARDES, default=o.get(OPT_RELEVES_GARDES, RELEVES_GARDES_DEFAUT)): _nombre(0, 90),
                 vol.Required(OPT_GARDER_BRUT, default=o.get(OPT_GARDER_BRUT, GARDER_BRUT_DEFAUT)): bool,
             }

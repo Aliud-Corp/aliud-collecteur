@@ -50,6 +50,8 @@ from .collecteurs.reddit import SOURCES_PAR_DEFAUT as SOURCES_REDDIT
 from .collecteurs.reddit import Reddit
 from .collecteurs.rss import SOURCES_PAR_DEFAUT as SOURCES_RSS
 from .collecteurs.rss import Rss
+from .collecteurs.x import SOURCES_PAR_DEFAUT as SOURCES_X
+from .collecteurs.x import X
 from .const import (
     AGENT_PAR_DEFAUT,
     BUDGET_DEFAUT,
@@ -92,6 +94,9 @@ from .const import (
     OPT_PAR_SOURCE,
     OPT_RELEVES_GARDES,
     OPT_TENTATIVES,
+    OPT_X_BEARER,
+    OPT_X_QUERY_COMPTE,
+    OPT_X_QUERY_FIL,
     PAR_SOURCE_DEFAUT,
     PLATEFORMES,
     RELEVES_GARDES_DEFAUT,
@@ -388,6 +393,16 @@ class Passeur:
             return Lobsters(agent=agent, noms=noms, par_source=par_source)
         if media == "rss":
             return Rss(agent=agent, noms=noms, par_source=par_source)
+        if media == "x":
+            return X(
+                agent=agent,
+                noms=noms,
+                cookie=d.get(cle_cookie("x"), ""),
+                par_source=par_source,
+                bearer=o.get(OPT_X_BEARER, ""),
+                query_compte=o.get(OPT_X_QUERY_COMPTE, ""),
+                query_fil=o.get(OPT_X_QUERY_FIL, ""),
+            )
         raise ValueError(f"média sans constructeur : {media}")
 
     async def _deposer(
@@ -553,6 +568,7 @@ def _sources_par_defaut(media: str) -> str:
         "hackernews": SOURCES_HN,
         "lobsters": SOURCES_LOBSTERS,
         "rss": SOURCES_RSS,
+        "x": SOURCES_X,
     }.get(media, "")
 
 
