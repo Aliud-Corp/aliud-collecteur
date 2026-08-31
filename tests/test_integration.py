@@ -728,3 +728,35 @@ async def test_tous_les_medias_a_terre_reste_un_echec(hass):
     await _monter_medias(hass, session, ["lobsters"], {"lobsters": "hottest\n"})
     bilan = await _collecter(hass, session)
     assert bilan["resultat"] == "echec"
+
+
+# ── Ce que le dépôt annonce ─────────────────────────────────────────────────
+#
+# Écrit après coup : l'objet partait en `application/json` avec
+# `Content-Encoding: gzip`. L'attelage a l'air juste et ment sur ce qu'on
+# télécharge — tout client HTTP qui l'honore décompresse à la volée, donc le
+# fichier arrive en JSON avec un nom en `.gz`, `gunzip` refuse et le Finder
+# cale. Rien ne surveillait ces deux en-têtes, d'où le trou.
+
+async def test_l_objet_depose_est_un_gzip_annonce_comme_tel(hass):
+    session = _session_nominale(1)
+    await _monter(hass, session, "programming\n")
+    await _collecter(hass, session)
+
+    for put in [a for a in session.appels if a["methode"] == "PUT"]:
+        assert put["entetes"]["content-type"] == "application/gzip"
+        assert "content-encoding" not in put["entetes"], (
+            "il ferait décompresser à la volée un objet nommé .gz"
+        )
+
+
+async def test_ce_qui_est_depose_est_exactement_ce_qui_est_ecrit(hass):
+    session = _session_nominale(2)
+    await _monter(hass, session, "programming\ndevops\n")
+    bilan = await _collecter(hass, session)
+
+    sur_disque = Path(bilan["medias"]["reddit"]["fichier"]).read_bytes()
+    puts = [a for a in session.appels if a["methode"] == "PUT"]
+    assert puts[0]["corps"] == sur_disque, "octet pour octet, sans quoi rien ne se compare"
+    assert sur_disque[:2] == b"\x1f\x8b", "et c'est bien un gzip"
+    assert json.loads(gzip.decompress(sur_disque))["media"] == "reddit"

@@ -53,6 +53,7 @@ from .collecteurs.rss import Rss
 from .collecteurs.x import SOURCES_PAR_DEFAUT as SOURCES_X
 from .collecteurs.x import X
 from .const import (
+    TYPE_ARCHIVE,
     AGENT_PAR_DEFAUT,
     BUDGET_DEFAUT,
     CONF_MEDIAS,
@@ -413,20 +414,31 @@ class Passeur:
     async def _deposer(
         self, session: Any, media: str, debut: str, octets: bytes
     ) -> str:
+        """Le relevé déposé tel qu'il a été écrit, octet pour octet.
+
+        POURQUOI PAS `Content-Encoding: gzip`
+        Il a l'air juste et il ment sur ce qu'on télécharge : tout client HTTP
+        qui l'honore décompresse à la volée, donc l'objet arrive en JSON avec
+        un nom en `.gz`. `gunzip` répond « not in gzip format » et le Finder
+        cale — relevé le 31/08/2026, sur le premier objet déposé pour de vrai.
+
+        Une archive doit rendre ce qu'elle a rangé. L'objet est donc un fichier
+        gzip opaque, annoncé comme tel : ce qu'on télécharge est exactement ce
+        que le passage a écrit, et son empreinte se compare.
+        """
         stockage = self._stockage()
         cle = releve.cle_datee(
             media, debut, self.entry.options.get(OPT_DISPOSITION, DISPOSITION_DEFAUT)
         )
         await depot_s3.deposer(
-            session, stockage, cle, octets, "application/json", encodage="gzip"
+            session, stockage, cle, octets, TYPE_ARCHIVE
         )
         await depot_s3.deposer(
             session,
             stockage,
             releve.cle_derniere(media),
             octets,
-            "application/json",
-            encodage="gzip",
+            TYPE_ARCHIVE,
         )
         return stockage.cle_complete(cle)
 

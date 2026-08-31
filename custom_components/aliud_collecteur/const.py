@@ -149,6 +149,12 @@ DOSSIER = "aliud_collecteur"
 FICHIER_SOURCES = "sources-{media}.txt"
 SCHEMA_RELEVE = 1
 
+# Ce que le relevé annonce sur le stockage. Pas `application/json` avec un
+# `Content-Encoding: gzip` : cet attelage a l'air juste et ment sur ce qu'on
+# télécharge, puisque tout client HTTP qui l'honore décompresse à la volée et
+# rend du JSON portant un nom en `.gz`.
+TYPE_ARCHIVE = "application/gzip"
+
 # Vingt passages, soit trois semaines à raison d'un par jour. Assez pour voir
 # une source qui se tait toujours, assez peu pour que l'état reste lisible.
 JOURNAL_MAX = 20
