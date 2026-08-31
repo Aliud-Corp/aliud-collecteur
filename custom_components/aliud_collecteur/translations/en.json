@@ -79,7 +79,8 @@
           "x_cookie": "X session cookie"
         },
         "data_description": {
-          "x_cookie": "Must carry `auth_token` and `ct0`. Without both, X answers 403 and nothing ties that back to an incomplete entry."
+          "x_cookie": "Must carry `auth_token` **and** `ct0`, both. The first carries the session, the second is echoed as the anti-CSRF header — X refuses the request without it.",
+          "reddit_cookie": "`reddit_session` **or** `token_v2` — either one is enough. `old.reddit.com` sets the first, the current interface sets the second, and an export often carries only the one from the frontend you signed in through."
         }
       },
       "reconfigure_cookies": {
@@ -90,7 +91,8 @@
           "x_cookie": "X session cookie"
         },
         "data_description": {
-          "x_cookie": "Must carry `auth_token` and `ct0`. Without both, X answers 403 and nothing ties that back to an incomplete entry."
+          "x_cookie": "Must carry `auth_token` **and** `ct0`, both. The first carries the session, the second is echoed as the anti-CSRF header — X refuses the request without it.",
+          "reddit_cookie": "`reddit_session` **or** `token_v2` — either one is enough. `old.reddit.com` sets the first, the current interface sets the second, and an export often carries only the one from the frontend you signed in through."
         }
       },
       "reauth_confirm": {
@@ -101,7 +103,8 @@
           "x_cookie": "X session cookie"
         },
         "data_description": {
-          "x_cookie": "Must carry `auth_token` and `ct0`. Without both, X answers 403 and nothing ties that back to an incomplete entry."
+          "x_cookie": "Must carry `auth_token` **and** `ct0`, both. The first carries the session, the second is echoed as the anti-CSRF header — X refuses the request without it.",
+          "reddit_cookie": "`reddit_session` **or** `token_v2` — either one is enough. `old.reddit.com` sets the first, the current interface sets the second, and an export often carries only the one from the frontend you signed in through."
         }
       },
       "reconfigure_medias": {
@@ -121,7 +124,7 @@
       "stockage_incomplet": "Storage is half filled in. Either all five fields, or none of them — four out of five is an interrupted entry, not an intention.",
       "aucun_media": "At least one medium is needed. Without one, a run reads nothing.",
       "cookie_illisible": "This is none of the three known formats. Expected: the header line, a browser-extension JSON export, or a cookies.txt file.",
-      "cookie_incomplet": "The export does not carry the session cookies. Check you exported from a tab signed in to the account, not from a private window.",
+      "cookie_incomplet": "The export carries no usable session cookie. Reddit takes `reddit_session` or `token_v2`; X requires both `auth_token` and `ct0`. Check the export comes from a signed-in tab, not a private window.",
       "sans_porte": "A selected medium still has nothing to read it with. Reddit takes a registered client or a cookie, X takes a cookie. Untick it, or paste its session."
     },
     "abort": {

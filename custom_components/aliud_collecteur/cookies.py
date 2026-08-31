@@ -28,12 +28,21 @@ from datetime import datetime, timezone
 
 _LOGGER = logging.getLogger(__name__)
 
-# Les cookies que Reddit exige pour reconnaître une session. Le reste de
-# l'export — préférences d'affichage, mesure d'audience — voyage pour rien et
-# grossit un secret qu'on range.
+# Ce qu'un média exige pour reconnaître une session, et la façon dont il
+# l'exige. Les deux médias ne demandent pas la même chose, et confondre les
+# deux cas refuse des exports parfaitement valides.
+#
+# `tous`   les noms doivent être là, tous. C'est le cas de X : `auth_token`
+#          porte la session et `ct0` est renvoyé en en-tête anti-CSRF — le
+#          collecteur se sert des deux, séparément.
+# `un`     un seul suffit. C'est le cas de Reddit : `old.reddit.com` pose
+#          `reddit_session`, l'interface actuelle pose `token_v2`, et un export
+#          fait après une connexion normale n'a souvent que l'un des deux.
+#          Exiger les deux, comme ce fichier le faisait, refusait une session
+#          qui marche.
 ESSENTIELS = {
-    "reddit": ("reddit_session", "token_v2"),
-    "x": ("auth_token", "ct0"),
+    "reddit": ("un", ("reddit_session", "token_v2")),
+    "x": ("tous", ("auth_token", "ct0")),
 }
 
 DOMAINES = {
@@ -95,13 +104,26 @@ def lire(brut: str, media: str = "") -> Cookie:
         )
 
     noms = [nom for nom, _, _ in paires]
-    essentiels = ESSENTIELS.get(media, ())
+    regle, essentiels = ESSENTIELS.get(media, ("tous", ()))
     return Cookie(
         entete="; ".join(f"{nom}={valeur}" for nom, valeur, _ in paires),
         noms=noms,
         expire_le=_plus_proche(paires, essentiels),
-        manquants=[nom for nom in essentiels if nom not in noms],
+        manquants=_manquants(regle, essentiels, noms),
     )
+
+
+def _manquants(regle: str, essentiels: tuple[str, ...], noms: list[str]) -> list[str]:
+    """Ce qui manque, selon que le média les veut tous ou un seul.
+
+    Sous la règle `un`, on ne rend rien tant qu'un nom est là — et la liste
+    complète sinon, parce que le message doit dire lesquels conviennent, pas
+    lequel il aurait fallu deviner.
+    """
+    presents = [nom for nom in essentiels if nom in noms]
+    if regle == "un":
+        return [] if presents else list(essentiels)
+    return [nom for nom in essentiels if nom not in noms]
 
 
 def _depuis_entete(brut: str) -> list[tuple[str, str, float | None]]:

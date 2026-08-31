@@ -79,7 +79,8 @@
           "x_cookie": "Cookie de session X"
         },
         "data_description": {
-          "x_cookie": "Doit porter `auth_token` et `ct0`. Sans les deux, X répond 403 et rien ne le rattache à une saisie incomplète."
+          "x_cookie": "Doit porter `auth_token` **et** `ct0`, les deux. Le premier porte la session, le second repart en en-tête anti-CSRF — X refuse la requête sans lui.",
+          "reddit_cookie": "`reddit_session` **ou** `token_v2` — l'un des deux suffit. `old.reddit.com` pose le premier, l'interface actuelle le second, et un export n'a souvent que celui du frontend par lequel tu t'es connecté."
         }
       },
       "reconfigure_cookies": {
@@ -90,7 +91,8 @@
           "x_cookie": "Cookie de session X"
         },
         "data_description": {
-          "x_cookie": "Doit porter `auth_token` et `ct0`. Sans les deux, X répond 403 et rien ne le rattache à une saisie incomplète."
+          "x_cookie": "Doit porter `auth_token` **et** `ct0`, les deux. Le premier porte la session, le second repart en en-tête anti-CSRF — X refuse la requête sans lui.",
+          "reddit_cookie": "`reddit_session` **ou** `token_v2` — l'un des deux suffit. `old.reddit.com` pose le premier, l'interface actuelle le second, et un export n'a souvent que celui du frontend par lequel tu t'es connecté."
         }
       },
       "reauth_confirm": {
@@ -101,7 +103,8 @@
           "x_cookie": "Cookie de session X"
         },
         "data_description": {
-          "x_cookie": "Doit porter `auth_token` et `ct0`. Sans les deux, X répond 403 et rien ne le rattache à une saisie incomplète."
+          "x_cookie": "Doit porter `auth_token` **et** `ct0`, les deux. Le premier porte la session, le second repart en en-tête anti-CSRF — X refuse la requête sans lui.",
+          "reddit_cookie": "`reddit_session` **ou** `token_v2` — l'un des deux suffit. `old.reddit.com` pose le premier, l'interface actuelle le second, et un export n'a souvent que celui du frontend par lequel tu t'es connecté."
         }
       },
       "reconfigure_medias": {
@@ -121,7 +124,7 @@
       "stockage_incomplet": "Le stockage est à moitié rempli. Les cinq champs, ou aucun — quatre sur cinq est une saisie interrompue, pas une intention.",
       "aucun_media": "Il faut au moins un média. Sans lui, un passage ne lit rien.",
       "cookie_illisible": "Ce n'est aucun des trois formats connus. Attendu : la ligne d'en-tête, un export JSON d'extension, ou un fichier cookies.txt.",
-      "cookie_incomplet": "L'export ne porte pas les cookies de session. Vérifie que tu l'as fait depuis un onglet connecté au compte, et non depuis une fenêtre privée.",
+      "cookie_incomplet": "L'export ne porte aucun cookie de session utilisable. Reddit prend `reddit_session` ou `token_v2` ; X exige `auth_token` et `ct0`. Vérifie que l'export vient d'un onglet connecté, pas d'une fenêtre privée.",
       "sans_porte": "Un média coché n'a toujours pas de quoi le lire. Reddit prend un client enregistré ou un cookie, X prend un cookie. Vide sa case, ou colle sa session."
     },
     "abort": {

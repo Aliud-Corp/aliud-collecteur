@@ -128,3 +128,54 @@ def test_un_cookie_expire_rend_un_nombre_de_jours_negatif():
 
 def test_sans_date_connue_on_ne_prétend_pas_savoir():
     assert lire("reddit_session=abc", "reddit").jours_restants is None
+
+
+# ── Un seul cookie suffit chez Reddit, les deux sont exigés chez X ──────────
+#
+# Écrit après une question à l'usage : « c'est reddit_session ou token_v2 ? ».
+# Les deux, selon le frontend par lequel on s'est connecté — `old.reddit.com`
+# pose le premier, l'interface actuelle le second. Exiger les deux, ce que ce
+# fichier faisait, refusait une session qui marche.
+
+def _un_cookie(nom, domaine=".reddit.com"):
+    return f'[{{"name":"{nom}","value":"abc","domain":"{domaine}"}}]'
+
+
+@pytest.mark.parametrize("nom", ["reddit_session", "token_v2"])
+def test_reddit_accepte_l_un_ou_l_autre(nom):
+    c = lire(_un_cookie(nom), "reddit")
+    assert c.manquants == [], f"{nom} seul doit suffire"
+    assert c.entete == f"{nom}=abc"
+
+
+def test_reddit_accepte_les_deux_ensemble():
+    charge = (
+        '[{"name":"reddit_session","value":"a","domain":".reddit.com"},'
+        '{"name":"token_v2","value":"b","domain":".reddit.com"}]'
+    )
+    assert lire(charge, "reddit").manquants == []
+
+
+def test_reddit_sans_aucun_des_deux_les_nomme_tous():
+    c = lire(_un_cookie("pref_gated_sr_optin"), "reddit")
+    assert c.manquants == ["reddit_session", "token_v2"], (
+        "le message doit dire lesquels conviennent, pas lequel deviner"
+    )
+
+
+@pytest.mark.parametrize(
+    "present, manquant", [("auth_token", "ct0"), ("ct0", "auth_token")]
+)
+def test_x_exige_les_deux(present, manquant):
+    # `auth_token` porte la session, `ct0` repart en en-tête anti-CSRF : le
+    # collecteur se sert des deux, séparément.
+    c = lire(_un_cookie(present, ".x.com"), "x")
+    assert c.manquants == [manquant]
+
+
+def test_x_accepte_les_deux_ensemble():
+    charge = (
+        '[{"name":"auth_token","value":"a","domain":".x.com"},'
+        '{"name":"ct0","value":"b","domain":".x.com"}]'
+    )
+    assert lire(charge, "x").manquants == []
