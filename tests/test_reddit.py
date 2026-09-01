@@ -239,14 +239,73 @@ async def test_le_mode_cookie_passe_par_le_site_et_non_par_oauth():
     assert session.appels[0]["url"] == "https://www.reddit.com/r/devops/top.json"
 
 
-@pytest.mark.parametrize("code", [401, 403])
-async def test_une_session_tombee_arrete_le_passage_au_lieu_d_insister(code):
-    session = Session(Reponse(code, corps="Forbidden"))
+async def test_un_401_arrete_le_passage_tout_de_suite():
+    """Un `401` dit « je ne sais pas qui tu es » : c'est la session, pas la porte."""
+    session = Session(Reponse(401, corps="Unauthorized"))
     collecteur = _reddit(client_id="", client_secret="", cookie=COOKIE)
     contexte = await collecteur.ouvrir(session)
     with pytest.raises(PassageImpossible) as capture:
         await collecteur.moissonner(session, contexte, Source("reddit", "a"))
     assert "s'arrête au lieu d'insister" in str(capture.value)
+
+
+async def test_un_403_isole_ne_rend_qu_une_source_muette():
+    """MESURÉ LE 01/09/2026, ET C'EST CE QUI A COÛTÉ UN RELEVÉ ENTIER
+
+    `r/api` a rendu `403` au milieu d'un passage, quatre-vingt-une sources après
+    le début, avec un cookie valide cent quatre-vingts jours de plus. Reddit rend
+    `403` à un compte connecté sur un sous-reddit privé, restreint ou en
+    quarantaine : la porte de ce sous-reddit est fermée, pas la session. Le
+    passage entier était jeté, six cent un éléments avec lui.
+    """
+    session = Session(Reponse(403, corps="Forbidden"))
+    collecteur = _reddit(client_id="", client_secret="", cookie=COOKIE)
+    contexte = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette) as capture:
+        await collecteur.moissonner(session, contexte, Source("reddit", "api"))
+    assert "quarantaine" in str(capture.value)
+    assert contexte.refus_consecutifs == 1
+
+
+async def test_trois_403_d_affilee_arretent_quand_meme_le_passage():
+    """La clause 4 tient : on ne pilonne pas une porte fermée.
+
+    Trois sous-reddits fermés à la suite dans une liste de cent n'arrive presque
+    jamais par hasard ; une session tombée, elle, les ferme tous d'un coup.
+    """
+    session = Session(*[Reponse(403, corps="Forbidden")] * 3)
+    collecteur = _reddit(client_id="", client_secret="", cookie=COOKIE)
+    contexte = await collecteur.ouvrir(session)
+    for nom in ("a", "b"):
+        with pytest.raises(SourceMuette):
+            await collecteur.moissonner(session, contexte, Source("reddit", nom))
+    with pytest.raises(PassageImpossible) as capture:
+        await collecteur.moissonner(session, contexte, Source("reddit", "c"))
+    assert "3 refus d'affilée" in str(capture.value)
+
+
+async def test_une_source_lue_remet_le_compteur_a_zero():
+    """Deux portes fermées séparées par une source qui répond ne font pas trois.
+
+    Sans cette remise à zéro, une liste de cent sous-reddits dont trois sont
+    privés finirait par s'arrêter à la centième, sur un compteur qui n'aurait
+    jamais rien mesuré d'autre que la longueur de la liste.
+    """
+    session = Session(
+        Reponse(403, corps="Forbidden"),
+        Reponse(200, listing(publication(score=700))),
+        Reponse(403, corps="Forbidden"),
+    )
+    collecteur = _reddit(client_id="", client_secret="", cookie=COOKIE)
+    contexte = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette):
+        await collecteur.moissonner(session, contexte, Source("reddit", "a"))
+    await collecteur.moissonner(session, contexte, Source("reddit", "b"))
+    assert contexte.refus_consecutifs == 0
+    assert contexte.lues == 1
+    with pytest.raises(SourceMuette):
+        await collecteur.moissonner(session, contexte, Source("reddit", "c"))
+    assert contexte.refus_consecutifs == 1
 
 
 @pytest.mark.parametrize("code", [401, 403])
