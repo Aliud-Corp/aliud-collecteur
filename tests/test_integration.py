@@ -391,7 +391,12 @@ async def test_l_agregat_prend_le_pire_des_deux_medias(hass):
     bilan = await _collecter(hass, session)
 
     assert bilan["medias"]["hackernews"]["resultat"] == "succes"
-    assert bilan["medias"]["lobsters"]["resultat"] == "partiel"
+    # `echec` depuis le 01/09/2026 : lobsters déclare une source, elle s'est tue,
+    # donc il n'a rien lu du tout. Un média qui n'ouvre aucune de ses sources n'a
+    # pas travaillé à moitié, il n'a pas travaillé.
+    assert bilan["medias"]["lobsters"]["resultat"] == "echec"
+    # L'agrégat, lui, reste partiel : un média à terre quand l'autre a rendu ses
+    # éléments n'est pas une panne générale. C'est la nuance de `_agreger`.
     assert bilan["resultat"] == "partiel", "un média en défaut décide de l'agrégat"
     # Le nom du média voyage avec la source, sinon « hottest » ne dit pas chez qui.
     assert bilan["sources_muettes"] == [
@@ -505,14 +510,25 @@ AVEC_COOKIE = {
 }
 
 
-async def _monter_cookie(hass, session, expire_le):
+async def _monter_cookie(hass, session, expire_le, sources="programming\n",
+                         avec_stockage=False):
+    """Le montage par cookie. `avec_stockage` rebranche le S3, que AVEC_COOKIE vide.
+
+    Vidé exprès à l'origine : ces tests-là parlaient d'authentification et pas de
+    dépôt. Ce qui a mordu le 01/09/2026 est précisément le point où les deux se
+    rencontrent — une session tombée et un relevé à déposer quand même — donc il
+    faut pouvoir monter les deux ensemble.
+    """
     dossier = Path(hass.config.path("aliud_collecteur"))
     dossier.mkdir(parents=True, exist_ok=True)
-    (dossier / "sources-reddit.txt").write_text("programming\n", encoding="utf-8")
+    (dossier / "sources-reddit.txt").write_text(sources, encoding="utf-8")
+    donnees = {**AVEC_COOKIE, "reddit_cookie_expire": expire_le}
+    if avec_stockage:
+        donnees.update({c: v for c, v in DONNEES.items() if c.startswith("s3_")})
     entree = MockConfigEntry(
         domain=DOMAIN,
         unique_id=DOMAIN,
-        data={**AVEC_COOKIE, "reddit_cookie_expire": expire_le},
+        data=donnees,
         options=OPTIONS,
     )
     entree.add_to_hass(hass)
@@ -549,8 +565,9 @@ async def test_un_cookie_expire_empeche_le_chargement_et_demande_le_formulaire(h
 
 
 async def test_une_session_tombee_en_vol_ouvre_le_formulaire(hass):
-    # 403 sur la première source : la session est tombée pendant le passage.
-    session = Session(Reponse(403, corps="Forbidden"))
+    # 401 sur la première source : Reddit dit « je ne sais pas qui tu es », donc
+    # c'est la session. Un 403 dirait « pas toi, ici » — voir le test suivant.
+    session = Session(Reponse(401, corps="Unauthorized"))
     entree, _ = await _monter_cookie(hass, session, DANS_UN_MOIS)
 
     bilan = await _collecter(hass, session)
@@ -573,7 +590,7 @@ async def test_une_session_tombee_n_insiste_pas_sur_les_autres_sources(hass):
         data={**AVEC_COOKIE, "reddit_cookie_expire": DANS_UN_MOIS}, options=OPTIONS,
     )
     entree.add_to_hass(hass)
-    session = Session(Reponse(403))
+    session = Session(Reponse(401))
     with patch(
         "custom_components.aliud_collecteur.async_get_clientsession",
         return_value=session,
@@ -737,6 +754,55 @@ async def test_tous_les_medias_a_terre_reste_un_echec(hass):
 # télécharge — tout client HTTP qui l'honore décompresse à la volée, donc le
 # fichier arrive en JSON avec un nom en `.gz`, `gunzip` refuse et le Finder
 # cale. Rien ne surveillait ces deux en-têtes, d'où le trou.
+
+async def test_un_releve_partiel_monte_quand_meme_dans_le_bucket(hass):
+    """LE DÉFAUT QUI A COÛTÉ UN MATIN — MESURÉ LE 01/09/2026
+
+    Le passage de 04:30 avait lu quatre-vingt-une sources et ramené six cent un
+    éléments quand la quatre-vingt-deuxième, `r/api`, a rendu un `403`. Le
+    relevé a été écrit sur le disque, puis **rien** n'est monté dans le bucket :
+    le dépôt se refusait dès qu'une erreur était posée sur le passage, quel que
+    soit ce qui avait été collecté. La veille d'Hermes a relu, ce matin-là, un
+    relevé d'essai à deux sources datant de la veille au soir.
+
+    Ce qui décide est le vide, pas l'erreur. Ce test met les deux ensemble :
+    deux sources lues, une porte fermée, et l'objet doit partir.
+    """
+    session = Session(
+        Reponse(200, listing(publication(name="t3_0"))),
+        Reponse(200, listing(publication(name="t3_1"))),
+        Reponse(401, corps="Unauthorized"),   # la session tombe sur la troisième
+        Reponse(200), Reponse(200),           # les deux PUT qui doivent avoir lieu
+    )
+    await _monter_cookie(hass, session, DANS_UN_MOIS, "a\nb\nc\n",
+                         avec_stockage=True)
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["medias"]["reddit"]["session_tombee"] is True
+    assert bilan["medias"]["reddit"]["elements"] == 2
+    assert bilan["medias"]["reddit"]["depot"] == "envoye", (
+        "un relevé partiel porte ses trous et ce qu'il a lu ; le jeter perd les deux"
+    )
+    assert bilan["medias"]["reddit"]["cle_s3"]
+    assert [a["url"] for a in session.appels if a["methode"] == "PUT"]
+
+
+async def test_un_releve_vide_ne_monte_pas(hass):
+    """L'autre moitié, et c'est ce que la condition d'origine protégeait.
+
+    Un relevé sans un seul élément écraserait `dernier.json.gz` avec un fichier
+    qui ne dit rien. Celui-là reste sur le disque.
+    """
+    session = Session(Reponse(401, corps="Unauthorized"))
+    await _monter_cookie(hass, session, DANS_UN_MOIS, "a\n", avec_stockage=True)
+
+    bilan = await _collecter(hass, session)
+
+    assert bilan["medias"]["reddit"]["elements"] == 0
+    assert bilan["medias"]["reddit"]["depot"] == "desactive"
+    assert not [a for a in session.appels if a["methode"] == "PUT"]
+
 
 async def test_l_objet_depose_est_un_gzip_annonce_comme_tel(hass):
     session = _session_nominale(1)

@@ -171,13 +171,28 @@ scrum
 """
 
 
+# Combien de `403` d'affilée avant de conclure que c'est la session et non les
+# sous-reddits. Trois, et le nombre a une raison : un sous-reddit fermé est un
+# accident isolé dans une liste de cent, alors qu'une session tombée les ferme
+# tous d'un coup. Trois portes closes à la suite ne se produisent presque jamais
+# par hasard, et trois requêtes de trop sur un compte restreint ne sont pas le
+# pilonnage que la clause 4 interdit.
+REFUS_AVANT_ABANDON = 3
+
+
 @dataclass(slots=True)
 class Contexte:
-    """Ce qui dure un passage : de quoi s'authentifier, et l'agent qui le porte."""
+    """Ce qui dure un passage : de quoi s'authentifier, et l'agent qui le porte.
+
+    Il porte aussi de quoi distinguer une porte fermée d'une session morte, et
+    c'est pour ça qu'il dure un passage et pas une requête.
+    """
 
     agent: str
     jeton: str = ""
     cookie: str = ""
+    lues: int = 0
+    refus_consecutifs: int = 0
 
     @property
     def par_cookie(self) -> bool:
@@ -299,13 +314,34 @@ class Reddit:
                 )
             if reponse.status in (401, 403):
                 if contexte.par_cookie:
-                    # Clause 4 de l'ADR 0034 : une session tombée arrête le
-                    # passage. Elle ne reviendra pas d'elle-même, et réessayer
-                    # cent sources sur une porte fermée fait remarquer le compte.
-                    raise SessionTombee(
-                        f"reddit : {reponse.status} avec le cookie sur "
-                        f"r/{source.nom}. La session est tombée ou le compte est "
-                        "restreint — le passage s'arrête au lieu d'insister.")
+                    # UN `403` NE DIT PAS LA MÊME CHOSE QU'UN `401`
+                    # Mesuré le 01/09/2026 : `r/api` a rendu `403` au milieu
+                    # d'un passage, quatre-vingt-une sources après le début, avec
+                    # un cookie valide cent quatre-vingts jours de plus. Reddit
+                    # rend `403` à un compte connecté sur un sous-reddit privé,
+                    # restreint ou mis en quarantaine — c'est la porte de ce
+                    # sous-reddit qui est fermée, pas la session.
+                    #
+                    # Un `401`, lui, veut dire « je ne sais pas qui tu es » :
+                    # c'est la session, et elle ne reviendra pas d'elle-même.
+                    #
+                    # La clause 4 de l'ADR 0036 reste tenue par le compteur : on
+                    # ne pilonne pas une porte fermée, on s'arrête au troisième
+                    # refus d'affilée. Ce que l'ancienne version faisait perdre
+                    # est mesuré : ce matin-là, six cent un éléments déjà lus.
+                    contexte.refus_consecutifs += 1
+                    if (reponse.status == 401
+                            or contexte.refus_consecutifs >= REFUS_AVANT_ABANDON):
+                        raise SessionTombee(
+                            f"reddit : {reponse.status} avec le cookie sur "
+                            f"r/{source.nom}, après {contexte.refus_consecutifs} "
+                            "refus d'affilée. La session est tombée — le passage "
+                            "s'arrête au lieu d'insister.")
+                    raise SourceMuette(
+                        f"reddit : r/{source.nom} a rendu 403 avec le cookie. "
+                        "Sous-reddit privé, restreint ou en quarantaine — "
+                        f"{contexte.refus_consecutifs} refus d'affilée sur "
+                        f"{REFUS_AVANT_ABANDON} avant d'arrêter le passage.")
                 # En mode jeton, un 401 sur une source isolée veut dire jeton
                 # expiré en cours de passage ; rouvrir est le travail de
                 # l'ordonnanceur au passage suivant.
@@ -319,6 +355,12 @@ class Reddit:
                     f"reddit : r/{source.nom} a rendu {reponse.status}"
                 )
             charge = await reponse.json(content_type=None)
+
+        # Une source lue remet le compteur à zéro : ce qui distingue une session
+        # morte d'un sous-reddit fermé est que la première ne laisse plus rien
+        # passer du tout.
+        contexte.lues += 1
+        contexte.refus_consecutifs = 0
 
         collecte_le = datetime.now(timezone.utc).isoformat(timespec="seconds")
         elements = [

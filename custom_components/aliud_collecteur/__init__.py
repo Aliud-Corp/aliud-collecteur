@@ -314,7 +314,9 @@ class Passeur:
             int(options.get(OPT_RELEVES_GARDES, RELEVES_GARDES_DEFAUT)),
         )
 
-        bilan.depot = self._etat_du_depot(deposer, resultat.erreur)
+        bilan.depot = self._etat_du_depot(
+            deposer, resultat.erreur, len(resultat.elements)
+        )
         if bilan.depot == DEPOT_ENVOYE:
             try:
                 bilan.cle_s3 = await self._deposer(session, media, resultat.debut, octets)
@@ -442,15 +444,34 @@ class Passeur:
         )
         return stockage.cle_complete(cle)
 
-    def _etat_du_depot(self, demande: bool, erreur: str | None) -> str:
-        """Ce qui décide qu'un envoi est tenté, et le mot qui dit pourquoi non."""
+    def _etat_du_depot(self, demande: bool, erreur: str | None,
+                       elements: int = 0) -> str:
+        """Ce qui décide qu'un envoi est tenté, et le mot qui dit pourquoi non.
+
+        CE QUI DÉCIDE EST LE VIDE, PAS L'ERREUR — MESURÉ LE 01/09/2026
+        La condition portait sur `erreur is not None`, avec pour raison écrite
+        « le passage n'a rien pu ouvrir ». Ce n'est pas ce qu'elle testait. Le
+        passage du 01/09 a lu quatre-vingt-une sources, ramené six cent un
+        éléments, écrit son fichier sur le disque — puis a tout jeté parce que la
+        quatre-vingt-deuxième, `r/api`, a rendu un `403`. Rien n'est monté dans
+        le bucket ce matin-là, et la veille a relu un relevé d'essai de la
+        veille au soir.
+
+        Un relevé partiel n'est pas un relevé vide. Il porte ses trous — le
+        `passage` nomme ses sources muettes, ses non lues et son erreur — donc
+        qui le lit sait ce qu'il n'a pas. Le jeter, c'est perdre ce qui a été
+        lu **et** la trace de ce qui a échoué.
+
+        Ce que la condition d'origine protégeait vraiment reste protégé : un
+        relevé sans un seul élément n'écrase pas `dernier.json.gz`.
+        """
         if not self._stockage_configure():
             return DEPOT_NON_CONFIGURE
         if not demande:
             return DEPOT_DESACTIVE
-        if erreur is not None:
-            # Le passage n'a rien pu ouvrir : déposer un relevé vide écraserait
-            # `dernier.json.gz` avec un fichier qui ne dit rien.
+        if elements == 0:
+            # Un relevé vide écraserait `dernier.json.gz` avec un fichier qui ne
+            # dit rien. C'est le seul cas, avec ou sans erreur.
             return DEPOT_DESACTIVE
         return DEPOT_ENVOYE
 
@@ -661,6 +682,18 @@ def _verdict(bilan: Bilan) -> str:
     le porte — c'est là que quinze relevés restés sur la machine se voient.
     """
     if bilan.erreur and bilan.elements == 0:
+        return RESULTAT_ECHEC
+    # RIEN LU DU TOUT EST UN ÉCHEC, MÊME SANS MESSAGE D'ERREUR
+    # Des sources toutes muettes ne posent pas d'`erreur` sur le passage — c'est
+    # voulu, une source qui se tait n'est pas une panne du collecteur. Mais un
+    # passage qui n'ouvre aucune des sources qu'il déclare et ne ramène rien n'a
+    # pas travaillé, et l'appeler « partiel » le range parmi les matins normaux.
+    #
+    # Ce cas passait pour un échec par accident jusqu'au 01/09/2026 : le dépôt
+    # était tenté sur un relevé vide, le stockage le refusait, et c'est ce refus
+    # qui donnait le verdict. Le dépôt ne part plus à vide, donc la règle
+    # s'écrit ici, où elle se lit.
+    if bilan.elements == 0 and bilan.sources_lues == 0:
         return RESULTAT_ECHEC
     if bilan.complet and not bilan.erreur:
         return RESULTAT_SUCCES
