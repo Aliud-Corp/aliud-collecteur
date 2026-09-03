@@ -19,10 +19,11 @@ relevé la déclare muette. **Les identifiants sont donc des réglages, pas des
 constantes** : une rotation se répare dans l'écran des options, sans attendre une
 version du greffon.
 
-JAMAIS ESSAYÉ CONTRE UNE VRAIE SESSION
-Personne n'a encore posé de cookie X. Ce fichier est écrit contre la forme
-documentée des réponses, et ses tests contre des charges fabriquées. Le premier
-passage réel dira ce qui manque.
+CE QU'UNE VRAIE SESSION A DIT
+Le premier passage réel a eu lieu le 03/09/2026 : deux comptes, trente-neuf
+publications, relevé déposé. Ce que ce fichier n'avait pas vu, c'est un refus
+isolé — il concluait la session morte sur le premier `403`, et un compte protégé
+suffisait à jeter le passage. Voir `_appeler`.
 """
 
 from __future__ import annotations
@@ -74,12 +75,27 @@ karpathy
 """
 
 
+# Combien de `403` d'affilée avant de conclure que c'est la session et non les
+# comptes. Reddit s'arrête à trois dans une liste de cent : trois portes closes
+# à la suite n'y arrivent presque jamais par hasard. X se lit sur deux ou trois
+# comptes, et garder trois y rendrait une session morte indétectable — chaque
+# compte muet, aucun formulaire, un échec silencieux chaque matin. Le seuil est
+# donc le plus petit des deux nombres, et il vaut 1 sur un compte unique : là,
+# rien ne distingue la porte de la session, et le dire est plus honnête que
+# choisir.
+REFUS_AVANT_ABANDON = 3
+
+
 @dataclass(slots=True)
 class Contexte:
     agent: str
     cookie: str
     csrf: str
     bearer: str
+    # De quoi distinguer un compte fermé d'une session morte, et c'est pour ça
+    # que le contexte dure un passage et pas une requête.
+    seuil: int = 1
+    refus_consecutifs: int = 0
     # Un compte résolu une fois par passage : son identifiant ne change pas, et
     # le redemander coûterait une requête par source pour la même réponse.
     identifiants: dict[str, str] = field(default_factory=dict)
@@ -148,6 +164,7 @@ class X:
             cookie=self._cookie,
             csrf=csrf,
             bearer=self._bearer,
+            seuil=min(REFUS_AVANT_ABANDON, max(1, len(self.sources()))),
         )
 
     async def moissonner(
@@ -220,10 +237,26 @@ class X:
             url, params={"variables": json.dumps(variables)}, headers=entetes
         ) as reponse:
             if reponse.status in (401, 403):
-                raise SessionTombee(
-                    f"x : {reponse.status} sur @{source}. La session est tombée "
-                    "ou le compte est restreint — le passage s'arrête au lieu "
-                    "d'insister."
+                # UN `403` NE DIT PAS LA MÊME CHOSE QU'UN `401`
+                # Un `401` veut dire « je ne sais pas qui tu es » : c'est la
+                # session, et elle ne reviendra pas d'elle-même. Un `403` arrive
+                # sur un compte protégé, suspendu ou restreint, et aussi sur un
+                # `ct0` que X n'accepte plus — la porte de ce compte, pas la
+                # session. Reddit a coûté un relevé de mille cinq cents éléments
+                # à confondre les deux le 01/09/2026 ; le même défaut était ici.
+                contexte.refus_consecutifs += 1
+                if (reponse.status == 401
+                        or contexte.refus_consecutifs >= contexte.seuil):
+                    raise SessionTombee(
+                        f"x : {reponse.status} sur @{source}, après "
+                        f"{contexte.refus_consecutifs} refus d'affilée. La "
+                        "session est tombée — le passage s'arrête au lieu "
+                        "d'insister."
+                    )
+                raise SourceMuette(
+                    f"x : @{source} a rendu 403. Compte protégé, suspendu ou "
+                    f"restreint — {contexte.refus_consecutifs} refus d'affilée "
+                    f"sur {contexte.seuil} avant d'arrêter le passage."
                 )
             if reponse.status == 429:
                 raise TropDeRequetes(
@@ -240,6 +273,11 @@ class X:
             if reponse.status != 200:
                 raise SourceMuette(f"x : @{source} a rendu {reponse.status}")
             charge = await reponse.json(content_type=None)
+
+        # Une requête qui aboutit prouve la session : ce qui précède n'était pas
+        # elle. Sans cette remise à zéro, deux comptes protégés séparés par un
+        # compte qui répond finiraient par passer pour une session morte.
+        contexte.refus_consecutifs = 0
 
         erreurs = charge.get("errors") if isinstance(charge, dict) else None
         if erreurs and not charge.get("data"):

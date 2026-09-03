@@ -528,13 +528,69 @@ async def test_une_publication_sans_bloc_legacy_est_ecartee():
     assert len(moisson.elements) == 1
 
 
-@pytest.mark.parametrize("code", [401, 403])
-async def test_une_session_x_tombee_arrete_le_passage(code):
-    session = Session(Reponse(code))
+async def test_un_401_sur_x_arrete_le_passage_tout_de_suite():
+    """Un `401` dit « je ne sais pas qui tu es » : c'est la session, pas le compte."""
+    session = Session(Reponse(401))
     collecteur = _x()
     ctx = await collecteur.ouvrir(session)
-    with pytest.raises(SessionTombee):
+    with pytest.raises(SessionTombee) as capture:
         await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+    assert "401" in str(capture.value)
+
+
+async def test_un_403_sur_x_ne_rend_qu_un_compte_muet():
+    """LA MÊME ERREUR QUE REDDIT, TROUVÉE AVANT QU'ELLE COÛTE UN RELEVÉ
+
+    X rend `403` sur un compte protégé, suspendu ou restreint — c'est la porte
+    de ce compte qui est fermée, pas la session. Conclure la session morte sur
+    un seul refus jette le passage entier et pose un formulaire de
+    réauthentification devant un cookie valide encore un an.
+    """
+    session = Session(Reponse(403))
+    collecteur = _x(noms=["a", "b", "c", "d"])
+    ctx = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette) as capture:
+        await collecteur.moissonner(session, ctx, _src("x", "a"))
+    assert "protégé" in str(capture.value)
+    assert ctx.refus_consecutifs == 1
+
+
+async def test_le_seuil_de_x_ne_depasse_jamais_le_nombre_de_comptes():
+    """Deux comptes déclarés, deux refus : la session est bien tombée.
+
+    Reddit s'arrête au troisième refus d'affilée dans une liste de cent. X se
+    lit sur deux ou trois comptes : garder trois y rendrait une session morte
+    indétectable — chaque compte muet, aucun formulaire, et un échec silencieux
+    chaque matin. Le seuil est donc le plus petit des deux nombres.
+    """
+    session = Session(Reponse(403), Reponse(403))
+    collecteur = _x(noms=["a", "b"])
+    ctx = await collecteur.ouvrir(session)
+    assert ctx.seuil == 2
+    with pytest.raises(SourceMuette):
+        await collecteur.moissonner(session, ctx, _src("x", "a"))
+    with pytest.raises(SessionTombee) as capture:
+        await collecteur.moissonner(session, ctx, _src("x", "b"))
+    assert "2 refus d'affilée" in str(capture.value)
+
+
+async def test_un_compte_lu_remet_le_compteur_de_x_a_zero():
+    """Un compte qui répond prouve la session : ce qui précède n'était pas elle."""
+    session = Session(
+        Reponse(403),
+        Reponse(200, _compte()),
+        Reponse(200, _fil(_tweet())),
+        Reponse(403),
+    )
+    collecteur = _x(noms=["a", "b", "c"])
+    ctx = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette):
+        await collecteur.moissonner(session, ctx, _src("x", "a"))
+    await collecteur.moissonner(session, ctx, _src("x", "b"))
+    assert ctx.refus_consecutifs == 0
+    with pytest.raises(SourceMuette):
+        await collecteur.moissonner(session, ctx, _src("x", "c"))
+    assert ctx.refus_consecutifs == 1
 
 
 async def test_un_identifiant_de_requete_perime_se_dit_comme_tel():
