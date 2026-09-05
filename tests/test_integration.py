@@ -826,3 +826,23 @@ async def test_ce_qui_est_depose_est_exactement_ce_qui_est_ecrit(hass):
     assert puts[0]["corps"] == sur_disque, "octet pour octet, sans quoi rien ne se compare"
     assert sur_disque[:2] == b"\x1f\x8b", "et c'est bien un gzip"
     assert json.loads(gzip.decompress(sur_disque))["media"] == "reddit"
+
+
+def test_le_service_propose_les_six_medias_et_pas_cinq():
+    """La liste du sélecteur est écrite à la main dans `services.yaml`.
+
+    Elle avait oublié `x`, et pendant trois jours le seul média qu'on voulait
+    essayer seul était le seul qu'on ne pouvait pas choisir à l'écran. Une liste
+    recopiée à la main diverge : celle-ci se compare à `MEDIAS`, qui est la
+    source.
+    """
+    import pathlib
+
+    import yaml
+
+    from custom_components.aliud_collecteur.const import MEDIAS
+
+    chemin = pathlib.Path("custom_components/aliud_collecteur/services.yaml")
+    services = yaml.safe_load(chemin.read_text(encoding="utf-8"))
+    options = services["collecter"]["fields"]["medias"]["selector"]["select"]["options"]
+    assert options == list(MEDIAS)
