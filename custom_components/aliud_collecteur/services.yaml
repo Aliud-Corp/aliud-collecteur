@@ -14,7 +14,10 @@ collecter:
       selector:
         select:
           multiple: true
-          options: [rss, arctic, hackernews, lobsters, reddit]
+          # Les six de `MEDIAS`, dans le même ordre. Un test les compare :
+          # une liste écrite à la main ici avait oublié `x`, et le seul média
+          # qu'on veut essayer seul était le seul qu'on ne pouvait pas choisir.
+          options: [rss, arctic, hackernews, lobsters, reddit, x]
     sources:
       name: Sources
       description: >-
