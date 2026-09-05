@@ -118,14 +118,15 @@ collecteur passe une fois par jour et cherche de la matière, pas un corpus. Le
 rythme, lui, est celui de l'ordonnanceur : un intervalle, sa gigue, et un frein
 qui s'étire quand X annonce son compteur.
 
-**L'identifiant de requête de la recherche n'a pas de défaut**, à la différence
-des deux autres. Personne ne l'a mesuré sur une vraie session, et en écrire un
-qui ressemble à un identifiant le ferait passer pour mesuré : toutes les
-recherches rendraient `404`, ce qui se lit « les identifiants ont tourné » et
-envoie chercher du mauvais côté. Il se relève une fois dans l'inspecteur d'un
-onglet connecté, onglet Réseau, sur une recherche lancée à la main — la requête
-`SearchTimeline` le porte dans son chemin — et se colle dans les options. Vide,
-les recherches se taisent en le disant ; les comptes suivis continuent.
+**L'identifiant de requête de la recherche a été relevé le 05/09/2026**, comme
+les deux autres, sur une session du studio. Il tourne comme eux, et se répare au
+même endroit : dans l'inspecteur d'un onglet connecté, onglet Réseau, sur une
+recherche lancée à la main, la requête `SearchTimeline` le porte dans son chemin.
+
+Vidé dans les options, il retombe sur ce défaut. Le jour où la rotation le rend
+inutile, c'est la constante du code qui se vide, et les recherches se taisent
+alors en disant où trouver la valeur plutôt que de collectionner des `404`. Les
+comptes suivis, eux, continuent : ce sont deux réglages.
 
 > **Jamais essayé contre une vraie session.** Écrit contre la forme documentée
 > des réponses, testé contre des charges fabriquées. Le premier passage réel dira
