@@ -98,6 +98,7 @@ from .const import (
     OPT_X_BEARER,
     OPT_X_QUERY_COMPTE,
     OPT_X_QUERY_FIL,
+    OPT_X_QUERY_RECHERCHE,
     PAR_SOURCE_DEFAUT,
     PLATEFORMES,
     RELEVES_GARDES_DEFAUT,
@@ -410,6 +411,7 @@ class Passeur:
                 bearer=o.get(OPT_X_BEARER, ""),
                 query_compte=o.get(OPT_X_QUERY_COMPTE, ""),
                 query_fil=o.get(OPT_X_QUERY_FIL, ""),
+                query_recherche=o.get(OPT_X_QUERY_RECHERCHE, ""),
             )
         raise ValueError(f"média sans constructeur : {media}")
 

@@ -66,10 +66,39 @@ BEARER_PAR_DEFAUT = (
 QUERY_COMPTE_DEFAUT = "G3KGOASz96M-Qu0nwmGXNg"
 QUERY_FIL_DEFAUT = "V7H0Ap3_Hh2FyS75OCDO3Q"
 
+# LA RECHERCHE N'A PAS DE DÉFAUT, ET C'EST DÉLIBÉRÉ
+# Les deux identifiants ci-dessus ont été relevés sur une vraie session le
+# 31/08/2026. Celui de `SearchTimeline` ne l'a pas été : personne ne l'a mesuré,
+# et en inventer un qui ressemble à un identifiant le ferait passer pour mesuré.
+# Un `404` sur toutes les recherches serait alors lu comme « les identifiants ont
+# tourné », ce qui enverrait chercher du mauvais côté.
+#
+# Vide, une source de recherche se tait en disant où trouver la valeur. Un
+# passage sur un onglet connecté, l'inspecteur ouvert sur l'onglet Réseau, une
+# recherche lancée : la requête `SearchTimeline` porte son identifiant dans son
+# chemin. Il se colle dans les options, comme les deux autres.
+QUERY_RECHERCHE_DEFAUT = ""
+
+# Le préfixe d'une source de recherche, celui que `hackernews.py` emploie déjà.
+# Une convention qui existe ne se réinvente pas : `q:kubernetes` se lit pareil
+# d'un média à l'autre, et `sources.yaml` du studio les déclare de la même façon.
+PREFIXE_RECHERCHE = "q:"
+
+# CE QUE LA RECHERCHE RAMÈNE, ET POURQUOI « Top » PLUTÔT QUE « Latest »
+# `Latest` rend l'ordre chronologique : tout ce qui a été publié, y compris ce
+# que personne n'a lu. `Top` rend ce que X classe par engagement, ce qui est le
+# tri que la ligne éditoriale du studio demande de toute façon en aval. Sur un
+# passage par jour, prendre le chronologique reviendrait à ramener du bruit puis
+# à le jeter au plancher.
+PRODUIT_RECHERCHE = "Top"
+
 SOURCES_PAR_DEFAUT = """\
-# Un compte par ligne, sans l'arobase. Le plancher de score se suffixe par @ :
-#   simonw
+# Une ligne par source. Deux formes :
+#   <compte>      le fil d'un compte, sans l'arobase
+#   q:<termes>    une recherche, classée par engagement
+# Le plancher de score se suffixe par @ :
 #   karpathy@500
+#   q:agent framework@50
 simonw
 karpathy
 """
@@ -116,6 +145,7 @@ class X:
         bearer: str = "",
         query_compte: str = "",
         query_fil: str = "",
+        query_recherche: str = "",
     ) -> None:
         self._agent = agent or "aliud-collecteur"
         self._noms = noms
@@ -124,12 +154,28 @@ class X:
         self._bearer = (bearer or "").strip() or BEARER_PAR_DEFAUT
         self._query_compte = (query_compte or "").strip() or QUERY_COMPTE_DEFAUT
         self._query_fil = (query_fil or "").strip() or QUERY_FIL_DEFAUT
+        self._query_recherche = (
+            (query_recherche or "").strip() or QUERY_RECHERCHE_DEFAUT
+        )
 
     def sources(self) -> list[Source]:
+        """Les comptes suivis et les recherches, dans l'ordre du réglage.
+
+        Une recherche garde son préfixe dans le nom de la source : c'est lui qui
+        la distingue d'un compte à la moisson, et c'est sous `x/q:<termes>` que
+        l'archive la range. Le `sources.yaml` du studio la déclare sous ce même
+        nom, donc rien ne se traduit d'un bout à l'autre de la chaîne.
+        """
         sorties = []
         for ligne in self._noms:
             nom, plancher = decouper_plancher(ligne)
-            nom = nom.lstrip("@")
+            if nom.startswith(PREFIXE_RECHERCHE):
+                # Les termes gardent leurs espaces : c'est une requête, pas un
+                # identifiant, et « agent framework » n'est pas « agentframework ».
+                termes = nom[len(PREFIXE_RECHERCHE):].strip()
+                nom = f"{PREFIXE_RECHERCHE}{termes}" if termes else ""
+            else:
+                nom = nom.lstrip("@")
             if nom:
                 sorties.append(
                     Source(media=self.media, nom=nom, options={"plancher": plancher})
@@ -170,6 +216,8 @@ class X:
     async def moissonner(
         self, session: Any, contexte: Contexte, source: Source
     ) -> Moisson:
+        if source.nom.startswith(PREFIXE_RECHERCHE):
+            return await self._rechercher(session, contexte, source)
         identifiant = contexte.identifiants.get(source.nom)
         if not identifiant:
             identifiant = await self._identifiant(session, contexte, source.nom)
@@ -185,6 +233,58 @@ class X:
                 "count": self._par_source,
                 "includePromotedContent": False,
                 "withVoice": False,
+            },
+            source.nom,
+        )
+        collecte_le = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        elements = [
+            e
+            for e in (
+                _element(brut, source.nom, collecte_le)
+                for brut in _publications(charge)
+            )
+            if e is not None
+        ]
+        return Moisson(elements=elements[: self._par_source])
+
+    async def _rechercher(
+        self, session: Any, contexte: Contexte, source: Source
+    ) -> Moisson:
+        """Une page de résultats pour une requête, et une seule.
+
+        UNE PAGE, PAS UN PARCOURS, ET C'EST LE POINT DE CE COLLECTEUR
+        `SearchTimeline` rend un curseur : le suivre ramènerait des centaines de
+        publications, au prix d'une requête par page et d'un motif de trafic que
+        rien ne distingue d'un aspirateur. Le studio passe une fois par jour et
+        cherche de la matière, pas un corpus. Une page de `count` résultats,
+        classée par engagement, suffit à ça et coûte une requête.
+
+        Elle en coûte même une de moins qu'un compte suivi : une recherche n'a
+        pas d'identifiant à résoudre, donc pas d'appel à `UserByScreenName`.
+
+        Le rythme, lui, n'est pas ici. L'ordonnanceur tient l'intervalle entre
+        deux requêtes, sa gigue et son frein quand X annonce son compteur, et il
+        vaut pour les recherches comme pour les fils.
+        """
+        if not self._query_recherche:
+            raise SourceMuette(
+                f"x : « {source.nom} » demande l'identifiant de requête de "
+                "SearchTimeline, qui n'a pas de défaut. Il se relève une fois "
+                "dans l'inspecteur d'un onglet connecté, onglet Réseau, sur une "
+                "recherche lancée à la main : la requête SearchTimeline le porte "
+                "dans son chemin. Il se colle ensuite dans les options."
+            )
+        termes = source.nom[len(PREFIXE_RECHERCHE):]
+        charge = await self._appeler(
+            session,
+            contexte,
+            self._query_recherche,
+            "SearchTimeline",
+            {
+                "rawQuery": termes,
+                "count": self._par_source,
+                "product": PRODUIT_RECHERCHE,
+                "querySource": "typed_query",
             },
             source.nom,
         )
@@ -223,6 +323,10 @@ class X:
         source: str,
     ) -> dict[str, Any]:
         url = f"{BASE}/{query}/{operation}"
+        # UNE RECHERCHE N'EST PAS UN COMPTE, ET LE MESSAGE NE DOIT PAS LE DIRE
+        # « x : @q:agent framework a rendu 403 » enverrait chercher un compte
+        # qui n'existe pas. L'arobase ne se pose que devant un compte.
+        ou = source if source.startswith(PREFIXE_RECHERCHE) else f"@{source}"
         entetes = {
             "User-Agent": contexte.agent,
             "Authorization": contexte.bearer,
@@ -248,19 +352,19 @@ class X:
                 if (reponse.status == 401
                         or contexte.refus_consecutifs >= contexte.seuil):
                     raise SessionTombee(
-                        f"x : {reponse.status} sur @{source}, après "
+                        f"x : {reponse.status} sur {ou}, après "
                         f"{contexte.refus_consecutifs} refus d'affilée. La "
                         "session est tombée — le passage s'arrête au lieu "
                         "d'insister."
                     )
                 raise SourceMuette(
-                    f"x : @{source} a rendu 403. Compte protégé, suspendu ou "
+                    f"x : {ou} a rendu 403. Compte protégé, suspendu ou "
                     f"restreint — {contexte.refus_consecutifs} refus d'affilée "
                     f"sur {contexte.seuil} avant d'arrêter le passage."
                 )
             if reponse.status == 429:
                 raise TropDeRequetes(
-                    f"x : @{source} bridé",
+                    f"x : {ou} bridé",
                     attente=_flottant(reponse.headers.get("x-rate-limit-reset")),
                 )
             if reponse.status == 404:
@@ -269,9 +373,9 @@ class X:
                     "probablement tourné — il se corrige dans les options."
                 )
             if reponse.status >= 500:
-                raise TropDeRequetes(f"x : @{source} a rendu {reponse.status}")
+                raise TropDeRequetes(f"x : {ou} a rendu {reponse.status}")
             if reponse.status != 200:
-                raise SourceMuette(f"x : @{source} a rendu {reponse.status}")
+                raise SourceMuette(f"x : {ou} a rendu {reponse.status}")
             charge = await reponse.json(content_type=None)
 
         # Une requête qui aboutit prouve la session : ce qui précède n'était pas
@@ -282,7 +386,7 @@ class X:
         erreurs = charge.get("errors") if isinstance(charge, dict) else None
         if erreurs and not charge.get("data"):
             message = str(erreurs[0].get("message", ""))[:120]
-            raise SourceMuette(f"x : @{source} — {message}")
+            raise SourceMuette(f"x : {ou}, {message}")
         return charge
 
 

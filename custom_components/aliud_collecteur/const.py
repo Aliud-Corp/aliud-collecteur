@@ -106,6 +106,7 @@ OPT_AGENT = "agent"
 OPT_X_BEARER = "x_bearer"
 OPT_X_QUERY_COMPTE = "x_query_compte"
 OPT_X_QUERY_FIL = "x_query_fil"
+OPT_X_QUERY_RECHERCHE = "x_query_recherche"
 
 HEURE_DEFAUT = 6
 MINUTE_DEFAUT = 30

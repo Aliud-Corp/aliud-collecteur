@@ -156,7 +156,8 @@
           "agent": "Declared user agent",
           "x_query_compte": "X — account query id",
           "x_query_fil": "X — timeline query id",
-          "x_bearer": "X — public bearer"
+          "x_bearer": "X — public bearer",
+          "x_query_recherche": "X — search query id"
         },
         "data_description": {
           "budget_secondes": "Past this delay the report ships with what it has, unread sources are named, and they move to the front of the queue on the next run.",
@@ -164,7 +165,8 @@
           "decalage_jours": "Arctic Shift captures a post at creation then captures it again later: on day 0 every score is 1, by day 3 they have matured. Ranking yesterday would rank zeros.",
           "disposition": "What listing a prefix returns. By medium: everything one source produced. By date: everything that landed on a given day, all media together.",
           "agent": "What the collector announces to RSS, Arctic Shift, Hacker News and Lobsters. Reddit keeps its own, entered separately: its API demands a specific shape and refuses a generic agent.\n\nThe default names itself and carries an address, so an operator who wants to know who is reading can write. What you put instead is your call.",
-          "x_query_compte": "Leave empty unless it breaks. X publishes no API for this: the endpoints read are its own web interface, and their query ids change on every build. A 404 on every X source means they rotated — they are fixed here, without waiting for a release."
+          "x_query_compte": "Leave empty unless it breaks. X publishes no API for this: the endpoints read are its own web interface, and their query ids change on every build. A 404 on every X source means they rotated — they are fixed here, without waiting for a release.",
+          "x_query_recherche": "Required for a a « q: » source source, and it has no default: nobody measured it, so nothing is written in its place. It is read once from the inspector of a logged-in tab, Network panel, on a search run by hand: the SearchTimeline request carries it in its path. Left empty, searches go mute saying so; followed accounts keep working."
         }
       }
     }
