@@ -16,7 +16,7 @@ se décide en aval, sur le bucket.
 | **Arctic Shift** | aucun | Les publications Reddit, servies par un tiers. Décalées de deux jours |
 | **Hacker News** | aucun | La page d'accueil et des recherches, par l'index Algolia. Scores réels, fraîcheur immédiate |
 | **Lobsters** | aucun | `hottest`, `newest`, et les fils d'étiquette, par le JSON public |
-| **X** | cookie de session | Les publications récentes d'un compte. Fragile — voir plus bas |
+| **X** | cookie de session | Les publications récentes d'un compte, et des recherches. Fragile — voir plus bas |
 | **Reddit** | client OAuth **ou** cookie de session | En direct. Sa porte s'est refermée au client anonyme — voir ci-dessous |
 
 Chacun a sa liste de sources, son relevé et sa clé de dépôt. Un passage les lit
@@ -105,6 +105,27 @@ répare à l'écran, sans attendre une version du greffon.
 Le cookie doit porter `auth_token` et `ct0` — le second sert deux fois, comme
 cookie et comme en-tête anti-CSRF, et son absence produit un `403` que rien ne
 rattache à une saisie incomplète. Le collecteur le vérifie à l'ouverture.
+
+**Deux formes de source, et la seconde cherche.** Un compte suivi rend son fil ;
+`q:<termes>` rend une page de résultats classée par engagement. Le studio suit
+des comptes qu'il a choisis, et cherche aussi la matière qu'aucun d'eux ne porte.
+
+Une recherche coûte **une** requête là où un compte en coûte deux : elle n'a pas
+d'identifiant à résoudre. Et une seule page, jamais le curseur. Le suivre
+ramènerait des centaines de publications au prix d'une requête par page, et
+dessinerait un motif de trafic que rien ne distingue d'un aspirateur ; le
+collecteur passe une fois par jour et cherche de la matière, pas un corpus. Le
+rythme, lui, est celui de l'ordonnanceur : un intervalle, sa gigue, et un frein
+qui s'étire quand X annonce son compteur.
+
+**L'identifiant de requête de la recherche n'a pas de défaut**, à la différence
+des deux autres. Personne ne l'a mesuré sur une vraie session, et en écrire un
+qui ressemble à un identifiant le ferait passer pour mesuré : toutes les
+recherches rendraient `404`, ce qui se lit « les identifiants ont tourné » et
+envoie chercher du mauvais côté. Il se relève une fois dans l'inspecteur d'un
+onglet connecté, onglet Réseau, sur une recherche lancée à la main — la requête
+`SearchTimeline` le porte dans son chemin — et se colle dans les options. Vide,
+les recherches se taisent en le disant ; les comptes suivis continuent.
 
 > **Jamais essayé contre une vraie session.** Écrit contre la forme documentée
 > des réponses, testé contre des charges fabriquées. Le premier passage réel dira
@@ -197,6 +218,7 @@ doublons sont ignorés à la lecture.
 | `arctic`, `reddit` | Un sous-reddit. Cent au départ ; le préfixe `r/` est toléré |
 | `hackernews` | Une étiquette de l'index — `front_page`, `show_hn`, `ask_hn` — ou `q:<termes>` pour une recherche |
 | `lobsters` | `hottest`, `newest`, ou `t:<etiquette>` |
+| `x` | Un compte sans l'arobase, ou `q:<termes>` pour une recherche classée par engagement |
 
 **Un plancher de score par source**, suffixé par `@` : `programming@200`,
 `front_page@100`, `t:devops@20`. Il vaut **zéro par défaut**, et zéro veut dire

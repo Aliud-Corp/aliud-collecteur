@@ -9,6 +9,7 @@ chaque classe fixe donc la même chose : aucune poignée de main, aucun secret.
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -526,6 +527,117 @@ async def test_une_publication_sans_bloc_legacy_est_ecartee():
     ctx = await collecteur.ouvrir(session)
     moisson = await collecteur.moissonner(session, ctx, _src("x", "simonw"))
     assert len(moisson.elements) == 1
+
+
+# ── La recherche X ──────────────────────────────────────────────────────────
+# Le studio suit des comptes choisis, et il cherche aussi de la matière qu'aucun
+# compte suivi ne porte. Les deux passent par la même session et le même rythme ;
+# ce qui change est le point d'entrée, et le fait qu'une recherche n'ait pas
+# d'identifiant de compte à résoudre.
+
+
+def _resultats(*tweets):
+    """La forme que rend SearchTimeline, aussi empilée que celle du fil."""
+    return {"data": {"search_by_raw_query": {"search_timeline": {"timeline": {
+        "instructions": [{"type": "TimelineAddEntries", "entries": [
+            {"content": {"itemContent": {"tweet_results": {"result": t}}}}
+            for t in tweets
+        ]}]
+    }}}}}
+
+
+def _cherche(**r):
+    return X(**{**dict(agent=AGENT, noms=["q:agent framework"], cookie=COOKIE_X,
+                       query_recherche="RECHERCHE"), **r})
+
+
+def test_une_recherche_se_declare_comme_une_source_et_garde_ses_termes():
+    """`q:` est la convention de `hackernews.py`, reprise telle quelle.
+
+    Les espaces des termes restent : c'est une requête, pas un identifiant. Et
+    le préfixe reste dans le nom, parce que c'est sous `x/q:<termes>` que
+    l'archive range le relevé et que `sources.yaml` du studio le déclare.
+    """
+    sources = _cherche(noms=["simonw", "q:agent framework@50", "q:  ", "karpathy@500"]).sources()
+    assert [(s.nom, s.plancher) for s in sources] == [
+        ("simonw", 0), ("q:agent framework", 50), ("karpathy", 500)
+    ], "une recherche vide n'est pas une source"
+
+
+async def test_une_recherche_appelle_SearchTimeline_sans_resoudre_de_compte():
+    """Une requête, pas deux : une recherche n'a pas d'identifiant à résoudre.
+
+    C'est la moitié du « crawling non agressif » qui se voit ici : suivre le
+    curseur ramènerait des centaines de publications au prix d'une requête par
+    page. Une page classée par engagement suffit à trouver de la matière, et
+    coûte moins qu'un compte suivi.
+    """
+    session = Session(Reponse(200, _resultats(_tweet())))
+    collecteur = _cherche()
+    ctx = await collecteur.ouvrir(session)
+    moisson = await collecteur.moissonner(session, ctx, _src("x", "q:agent framework"))
+
+    assert len(session.appels) == 1, "une recherche ne résout aucun compte"
+    appel = session.appels[0]
+    assert "SearchTimeline" in appel["url"]
+    assert "RECHERCHE" in appel["url"], "l'identifiant de requête vient des options"
+    variables = json.loads(appel["params"]["variables"])
+    assert variables["rawQuery"] == "agent framework"
+    assert variables["product"] == "Top", "le chronologique ramènerait ce que personne n'a lu"
+    assert len(moisson.elements) == 1
+
+
+async def test_un_resultat_de_recherche_porte_son_auteur_et_la_recherche_en_source():
+    """L'auteur est celui de la publication, la source est la requête.
+
+    Sans ça, l'archive rangerait les résultats sous le compte du premier auteur
+    trouvé, et personne ne pourrait dire d'où ils viennent.
+    """
+    session = Session(Reponse(200, _resultats(_tweet())))
+    collecteur = _cherche()
+    ctx = await collecteur.ouvrir(session)
+    e = (await collecteur.moissonner(
+        session, ctx, _src("x", "q:agent framework"))).elements[0]
+
+    assert e.source == "q:agent framework"
+    assert e.auteur == "simonw"
+    assert e.url == "https://x.com/simonw/status/1780000000000000000"
+
+
+async def test_sans_identifiant_de_recherche_la_source_se_tait_en_le_disant():
+    """Il n'a pas de défaut, et c'est délibéré : personne ne l'a mesuré.
+
+    Une valeur inventée qui ressemble à un identifiant ferait rendre `404` à
+    toutes les recherches, ce qui se lit « les identifiants ont tourné » et
+    envoie chercher du mauvais côté.
+    """
+    session = Session()
+    collecteur = _cherche(query_recherche="")
+    ctx = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette) as capture:
+        await collecteur.moissonner(session, ctx, _src("x", "q:agent framework"))
+    assert "SearchTimeline" in str(capture.value)
+    assert session.appels == [], "aucune requête ne part sans identifiant"
+
+
+async def test_les_comptes_suivis_continuent_sans_identifiant_de_recherche():
+    """Une recherche muette n'emporte pas les comptes : ce sont deux réglages."""
+    session = Session(Reponse(200, _compte()), Reponse(200, _fil(_tweet())))
+    collecteur = _cherche(noms=["simonw", "q:agent framework"], query_recherche="")
+    ctx = await collecteur.ouvrir(session)
+    moisson = await collecteur.moissonner(session, ctx, _src("x", "simonw"))
+    assert len(moisson.elements) == 1
+
+
+async def test_un_refus_sur_une_recherche_ne_la_nomme_pas_comme_un_compte():
+    """« @q:agent framework a rendu 403 » enverrait chercher un compte."""
+    session = Session(Reponse(403))
+    collecteur = _cherche(noms=["a", "b", "c", "q:agent framework"])
+    ctx = await collecteur.ouvrir(session)
+    with pytest.raises(SourceMuette) as capture:
+        await collecteur.moissonner(session, ctx, _src("x", "q:agent framework"))
+    assert "@q:" not in str(capture.value)
+    assert "q:agent framework" in str(capture.value)
 
 
 async def test_un_401_sur_x_arrete_le_passage_tout_de_suite():
