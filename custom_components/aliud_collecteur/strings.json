@@ -135,7 +135,7 @@
   },
   "options": {
     "step": {
-      "init": {
+      "reglages": {
         "title": "Pace and bounds of one run",
         "description": "Reddit grants a registered client 100 requests per minute, so a hundred sources fit inside one minute of budget. The default rate spends less than a third of it and keeps the rest for retries.",
         "data": {
@@ -168,7 +168,31 @@
           "x_query_compte": "Leave empty unless it breaks. X publishes no API for this: the endpoints read are its own web interface, and their query ids change on every build. A 404 on every X source means they rotated — they are fixed here, without waiting for a release.",
           "x_query_recherche": "Required for a a « q: » source source, and it has no default: nobody measured it, so nothing is written in its place. It is read once from the inspector of a logged-in tab, Network panel, on a search run by hand: the SearchTimeline request carries it in its path. Left empty, searches go mute saying so; followed accounts keep working."
         }
+      },
+      "init": {
+        "title": "Aliud collector",
+        "menu_options": {
+          "reglages": "Settings",
+          "sources": "Source lists"
+        }
+      },
+      "sources": {
+        "title": "Which media",
+        "description": "Only the media this install collects.",
+        "data": {
+          "medias": "Media"
+        }
+      },
+      "liste": {
+        "title": "Sources for {media}",
+        "description": "One source per line, « # » to comment. Saved to {fichier}, which stays the only truth: a hundred entries paste better from an editor, two accounts type better here.",
+        "data": {
+          "sources": "The list"
+        }
       }
+    },
+    "abort": {
+      "aucun_media": "No media is enabled on this install."
     }
   },
   "entity": {

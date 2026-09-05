@@ -11,6 +11,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+import voluptuous as vol
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.data_entry_flow import FlowResultType
 
@@ -536,3 +537,86 @@ async def test_un_media_sans_cookie_ne_bloque_pas_les_autres(hass):
         )
     assert flux["reason"] == "reconfigure_successful"
     assert entree.data["medias"] == ["rss", "lobsters"]
+
+
+# ── Les sources, à l'écran ──────────────────────────────────────────────────
+# Le fichier reste la seule vérité : ces cas vérifient que l'écran le lit et le
+# réécrit, jamais qu'il range une seconde liste dans les options. Deux vérités
+# pour une liste, et le passage lirait la mauvaise sans que rien ne le dise.
+
+
+async def _options(hass, entree, branche):
+    """Le menu des options, puis la branche demandée."""
+    flux = await hass.config_entries.options.async_init(entree.entry_id)
+    assert flux["type"] is FlowResultType.MENU, flux["type"]
+    return await hass.config_entries.options.async_configure(
+        flux["flow_id"], {"next_step_id": branche}
+    )
+
+
+async def test_le_menu_des_options_separe_les_reglages_des_sources(hass):
+    entree = await _entree_sans_stockage(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await hass.config_entries.options.async_init(entree.entry_id)
+    assert flux["type"] is FlowResultType.MENU
+    assert flux["menu_options"] == ["reglages", "sources"]
+
+
+async def test_l_ecran_des_sources_n_offre_que_les_medias_actifs(hass):
+    """Proposer les six ferait écrire une liste que rien ne lira."""
+    entree = await _entree_sans_stockage(hass)
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True):
+        flux = await _options(hass, entree, "sources")
+    assert flux["step_id"] == "sources"
+    assert flux["data_schema"]({"medias": "reddit"})["medias"] == "reddit"
+    with pytest.raises(vol.Invalid):
+        flux["data_schema"]({"medias": "hackernews"})
+
+
+async def test_la_liste_montre_le_fichier_puis_le_reecrit(hass, tmp_path):
+    """Ce qui est montré est le fichier, commentaires compris.
+
+    Montrer ce que `lire_sources` en tire effacerait les annotations du board à
+    la première ouverture de l'écran.
+    """
+    entree = await _entree_sans_stockage(hass)
+    dossier = tmp_path / "aliud_collecteur"
+    dossier.mkdir()
+    fichier = dossier / "sources-reddit.txt"
+    fichier.write_text("# ce que je suis\nprogramming:100\n", encoding="utf-8")
+
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True), \
+            patch.object(hass.config, "path", return_value=str(dossier)):
+        flux = await _options(hass, entree, "sources")
+        flux = await hass.config_entries.options.async_configure(
+            flux["flow_id"], {"medias": "reddit"}
+        )
+        assert flux["step_id"] == "liste"
+        montre = flux["data_schema"]({})["sources"]
+        assert montre == "# ce que je suis\nprogramming:100\n", "le commentaire a sauté"
+
+        flux = await hass.config_entries.options.async_configure(
+            flux["flow_id"], {"sources": "# ce que je suis\nprogramming:100\ndevops:80"}
+        )
+
+    assert flux["type"] is FlowResultType.CREATE_ENTRY
+    # Le fichier porte la nouvelle liste, avec sa fin de ligne : sans elle, la
+    # ligne suivante collée depuis un terminal rejoindrait la dernière source.
+    assert fichier.read_text(encoding="utf-8") == (
+        "# ce que je suis\nprogramming:100\ndevops:80\n")
+    # Et rien n'est parti dans les options : le fichier reste la seule vérité.
+    assert "sources" not in entree.options
+
+
+async def test_un_fichier_absent_montre_la_liste_livree(hass, tmp_path):
+    """Le premier passage écrit la liste livrée ; l'écran la montre avant lui."""
+    entree = await _entree_sans_stockage(hass)
+    dossier = tmp_path / "vide"
+    with patch("custom_components.aliud_collecteur.async_setup_entry", return_value=True), \
+            patch.object(hass.config, "path", return_value=str(dossier)):
+        flux = await _options(hass, entree, "sources")
+        flux = await hass.config_entries.options.async_configure(
+            flux["flow_id"], {"medias": "reddit"}
+        )
+        montre = flux["data_schema"]({})["sources"]
+    assert "programming" in montre, "la liste livrée de reddit ne s'affiche pas"

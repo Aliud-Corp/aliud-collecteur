@@ -33,6 +33,7 @@ soit parti est un échec qui a l'air d'un succès.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -62,6 +63,8 @@ from .collecteurs.reddit import Reddit
 from .const import (
     BUDGET_DEFAUT,
     CONF_MEDIAS,
+    DOSSIER,
+    FICHIER_SOURCES,
     CONF_REDDIT_CLIENT_ID,
     CONF_REDDIT_COOKIE,
     CONF_REDDIT_CLIENT_SECRET,
@@ -85,6 +88,7 @@ from .const import (
     AGENT_PAR_DEFAUT,
     HEURE_DEFAUT,
     MEDIAS,
+    OPT_SOURCES,
     MEDIAS_A_COOKIE,
     MEDIAS_SANS_IDENTIFIANTS,
     cle_cookie,
@@ -551,9 +555,28 @@ def _medias_retenus(saisie: dict[str, Any]) -> list[str]:
 
 
 class FluxDOptions(OptionsFlow):
-    """L'heure, le débit, et ce qui borne un passage."""
+    """L'heure, le débit, ce qui borne un passage, et la liste des sources.
+
+    DEUX PORTES SUR UN SEUL FICHIER, JAMAIS DEUX MAGASINS
+    Les sources vivent dans `/config/aliud_collecteur/sources-<media>.txt`, et
+    elles y restent : cet écran lit ce fichier et le réécrit. Les ranger aussi
+    dans les options donnerait deux vérités pour une liste, et le jour où elles
+    divergeraient personne ne saurait laquelle le passage a lue.
+
+    Le fichier n'a pas disparu pour autant. Cent sous-reddits se collent depuis
+    un éditeur, pas dans un formulaire, et c'est ce que dit `lire_sources`. Ce
+    que l'écran apporte est l'autre cas : ajouter deux comptes et cinq
+    recherches sans ouvrir un terminal, depuis le téléphone où le board lit ses
+    brouillons.
+    """
 
     async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Le menu : les réglages d'un côté, les sources de l'autre."""
+        return self.async_show_menu(step_id="init", menu_options=["reglages", "sources"])
+
+    async def async_step_reglages(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
@@ -597,7 +620,85 @@ class FluxDOptions(OptionsFlow):
                 vol.Required(OPT_GARDER_BRUT, default=o.get(OPT_GARDER_BRUT, GARDER_BRUT_DEFAUT)): bool,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="reglages", data_schema=schema)
+
+    # ── Les sources, à l'écran ──────────────────────────────────────────────
+
+    async def async_step_sources(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Quel média : seulement ceux que cette installation a activés.
+
+        Proposer les six ferait écrire une liste que rien ne lira, et le média
+        ressortirait muet à chaque passage sans que la cause soit ici.
+        """
+        actifs = _medias_retenus(dict(self.config_entry.data))
+        if user_input is not None:
+            self._media = user_input[CONF_MEDIAS]
+            return await self.async_step_liste()
+        if not actifs:
+            return self.async_abort(reason="aucun_media")
+        return self.async_show_form(
+            step_id="sources",
+            data_schema=vol.Schema({
+                vol.Required(CONF_MEDIAS, default=actifs[0]): SelectSelector(
+                    SelectSelectorConfig(options=actifs, mode=SelectSelectorMode.DROPDOWN)
+                )
+            }),
+        )
+
+    async def async_step_liste(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Le fichier du média, tel quel, commentaires compris.
+
+        Ce qui est montré est le contenu du fichier et non la liste que
+        `lire_sources` en tire : elle a déjà retiré les commentaires et les
+        doublons, et réécrire ça effacerait ce que le board avait annoté.
+        """
+        # Importé ici et non en tête : `__init__` charge ce module, et le
+        # prendre au chargement fermerait la boucle. La liste livrée d'un média
+        # vit là-bas parce que c'est là que les six collecteurs sont réunis, et
+        # la recopier ici en ferait une seconde qui vieillirait.
+        from . import _sources_par_defaut
+
+        chemin = self._chemin_sources(self._media)
+        if user_input is not None:
+            await self.hass.async_add_executor_job(
+                _ecrire_sources, chemin, user_input[OPT_SOURCES]
+            )
+            # Rien ne va dans les options : le fichier est la seule vérité, et
+            # une entrée vide ne toucherait pas aux réglages existants.
+            return self.async_create_entry(title="", data=dict(self.config_entry.options))
+        contenu = await self.hass.async_add_executor_job(
+            _lire_sources_brutes, chemin, _sources_par_defaut(self._media)
+        )
+        return self.async_show_form(
+            step_id="liste",
+            data_schema=vol.Schema({vol.Optional(OPT_SOURCES, default=contenu): _COLLE}),
+            description_placeholders={"media": self._media, "fichier": str(chemin)},
+        )
+
+    def _chemin_sources(self, media: str) -> Path:
+        return Path(self.hass.config.path(DOSSIER)) / FICHIER_SOURCES.format(media=media)
+
+
+def _lire_sources_brutes(chemin: Path, defaut: str) -> str:
+    """Le fichier tel qu'il est, ou la liste livrée s'il n'existe pas encore."""
+    if not chemin.exists():
+        return defaut
+    return chemin.read_text(encoding="utf-8", errors="replace")
+
+
+def _ecrire_sources(chemin: Path, contenu: str) -> None:
+    """Le fichier réécrit, avec sa fin de ligne.
+
+    Un fichier sans retour final se relit sans erreur, et se complète mal depuis
+    un terminal : la ligne suivante se colle à la dernière source.
+    """
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    texte = contenu.replace("\r\n", "\n").rstrip() + "\n"
+    chemin.write_text(texte, encoding="utf-8")
 
 
 def _nombre(mini: float, maxi: float, pas: float = 1) -> NumberSelector:

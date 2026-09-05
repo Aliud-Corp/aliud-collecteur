@@ -135,7 +135,7 @@
   },
   "options": {
     "step": {
-      "init": {
+      "reglages": {
         "title": "Rythme et bornes d'un passage",
         "description": "Reddit accorde cent requêtes par minute à un client enregistré. Cent sources tiennent donc dans une minute de budget ; le débit par défaut en consomme moins d'un tiers et garde la marge pour les réessais.",
         "data": {
@@ -168,7 +168,31 @@
           "x_query_compte": "Laisser vide sauf panne. X ne publie pas d'API pour ça : les points d'entrée lus sont ceux de son interface web, et leurs identifiants changent à chaque build. Un `404` sur toutes les sources X veut dire qu'ils ont tourné — ils se réparent ici, sans attendre une version du greffon.",
           "x_query_recherche": "Exigé pour une source « q: » suivi des termes, et sans défaut : personne ne l'a mesuré, donc rien n'est écrit à sa place. Il se relève une fois dans l'inspecteur d'un onglet connecté, onglet Réseau, sur une recherche lancée à la main : la requête SearchTimeline le porte dans son chemin. Vide, les recherches se taisent en le disant ; les comptes suivis, eux, continuent."
         }
+      },
+      "init": {
+        "title": "Collecteur Aliud",
+        "menu_options": {
+          "reglages": "Réglages",
+          "sources": "Listes de sources"
+        }
+      },
+      "sources": {
+        "title": "Quel média",
+        "description": "Seulement ceux que cette installation collecte.",
+        "data": {
+          "medias": "Média"
+        }
+      },
+      "liste": {
+        "title": "Les sources de {media}",
+        "description": "Une source par ligne, « # » pour commenter. Écrit dans {fichier}, qui reste la seule vérité : cent entrées se collent mieux depuis un éditeur, deux comptes se tapent mieux ici.",
+        "data": {
+          "sources": "La liste"
+        }
       }
+    },
+    "abort": {
+      "aucun_media": "Aucun média n'est activé sur cette installation."
     }
   },
   "entity": {
