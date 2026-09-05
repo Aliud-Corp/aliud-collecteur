@@ -27,6 +27,7 @@ from custom_components.aliud_collecteur.collecteurs.arctic import ArcticShift
 from custom_components.aliud_collecteur.collecteurs.hackernews import HackerNews
 from custom_components.aliud_collecteur.collecteurs.lobsters import Lobsters
 from custom_components.aliud_collecteur.collecteurs.rss import OCTETS_MAX, Rss
+from custom_components.aliud_collecteur.collecteurs import x as module_x
 from custom_components.aliud_collecteur.collecteurs.x import X
 from tests.faux_reseau import Reponse, Session
 
@@ -604,13 +605,15 @@ async def test_un_resultat_de_recherche_porte_son_auteur_et_la_recherche_en_sour
     assert e.url == "https://x.com/simonw/status/1780000000000000000"
 
 
-async def test_sans_identifiant_de_recherche_la_source_se_tait_en_le_disant():
-    """Il n'a pas de défaut, et c'est délibéré : personne ne l'a mesuré.
+async def test_sans_identifiant_de_recherche_la_source_se_tait_en_le_disant(monkeypatch):
+    """Le jour où la rotation rend le défaut inutile et où on le vide.
 
-    Une valeur inventée qui ressemble à un identifiant ferait rendre `404` à
-    toutes les recherches, ce qui se lit « les identifiants ont tourné » et
-    envoie chercher du mauvais côté.
+    L'identifiant a été relevé le 05/09/2026, donc vider l'option retombe
+    dessus. Ce cas est celui d'après : la rotation a eu lieu, le défaut ne vaut
+    plus rien, et il est mis à vide en attendant le relevé suivant. La recherche
+    doit alors dire où trouver la valeur, pas partir chercher un `404`.
     """
+    monkeypatch.setattr(module_x, "QUERY_RECHERCHE_DEFAUT", "")
     session = Session()
     collecteur = _cherche(query_recherche="")
     ctx = await collecteur.ouvrir(session)
@@ -620,8 +623,9 @@ async def test_sans_identifiant_de_recherche_la_source_se_tait_en_le_disant():
     assert session.appels == [], "aucune requête ne part sans identifiant"
 
 
-async def test_les_comptes_suivis_continuent_sans_identifiant_de_recherche():
+async def test_les_comptes_suivis_continuent_sans_identifiant_de_recherche(monkeypatch):
     """Une recherche muette n'emporte pas les comptes : ce sont deux réglages."""
+    monkeypatch.setattr(module_x, "QUERY_RECHERCHE_DEFAUT", "")
     session = Session(Reponse(200, _compte()), Reponse(200, _fil(_tweet())))
     collecteur = _cherche(noms=["simonw", "q:agent framework"], query_recherche="")
     ctx = await collecteur.ouvrir(session)

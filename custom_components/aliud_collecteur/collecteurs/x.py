@@ -66,18 +66,18 @@ BEARER_PAR_DEFAUT = (
 QUERY_COMPTE_DEFAUT = "G3KGOASz96M-Qu0nwmGXNg"
 QUERY_FIL_DEFAUT = "V7H0Ap3_Hh2FyS75OCDO3Q"
 
-# LA RECHERCHE N'A PAS DE DÉFAUT, ET C'EST DÉLIBÉRÉ
-# Les deux identifiants ci-dessus ont été relevés sur une vraie session le
-# 31/08/2026. Celui de `SearchTimeline` ne l'a pas été : personne ne l'a mesuré,
-# et en inventer un qui ressemble à un identifiant le ferait passer pour mesuré.
-# Un `404` sur toutes les recherches serait alors lu comme « les identifiants ont
-# tourné », ce qui enverrait chercher du mauvais côté.
+# Celui de la recherche, relevé le 05/09/2026 sur une session du studio : le
+# board a exporté le trafic d'une recherche lancée à la main, et la requête
+# `SearchTimeline` y portait cet identifiant. Il tourne comme les deux autres, et
+# se répare au même endroit.
 #
-# Vide, une source de recherche se tait en disant où trouver la valeur. Un
-# passage sur un onglet connecté, l'inspecteur ouvert sur l'onglet Réseau, une
-# recherche lancée : la requête `SearchTimeline` porte son identifiant dans son
-# chemin. Il se colle dans les options, comme les deux autres.
-QUERY_RECHERCHE_DEFAUT = ""
+# Il n'en avait pas la veille, et le fichier disait pourquoi : rien n'avait été
+# mesuré, donc rien n'était écrit. Un identifiant inventé qui ressemble à un
+# identifiant fait rendre `404` à toutes les recherches, ce qui se lit « les
+# identifiants ont tourné » et envoie chercher du mauvais côté. La garde qui
+# refuse une recherche sans identifiant reste : elle sert le jour où celui-ci
+# tourne et où le board le vide pour le remplacer.
+QUERY_RECHERCHE_DEFAUT = "hyPfJYJ_XAtDYoslQc-Rgg"
 
 # Le préfixe d'une source de recherche, celui que `hackernews.py` emploie déjà.
 # Une convention qui existe ne se réinvente pas : `q:kubernetes` se lit pareil
