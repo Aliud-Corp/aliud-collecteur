@@ -107,6 +107,9 @@ OPT_X_BEARER = "x_bearer"
 OPT_X_QUERY_COMPTE = "x_query_compte"
 OPT_X_QUERY_FIL = "x_query_fil"
 OPT_X_QUERY_RECHERCHE = "x_query_recherche"
+# Le champ de l'écran des sources. Il ne se range jamais dans les options :
+# ce qu'il porte part dans le fichier du média, qui reste la seule vérité.
+OPT_SOURCES = "sources"
 
 HEURE_DEFAUT = 6
 MINUTE_DEFAUT = 30

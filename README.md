@@ -210,8 +210,19 @@ doivent pas ressembler à quinze relevés archivés.
 
 Un fichier texte par média, une source par ligne, `#` pour commenter :
 `/config/aliud_collecteur/sources-<media>.txt`. Écrit au premier passage avec sa
-liste de départ, puis jamais réécrit — elle appartient à celui qui l'édite. Les
-doublons sont ignorés à la lecture.
+liste de départ, puis jamais réécrit par le collecteur — elle appartient à celui
+qui l'édite. Les doublons sont ignorés à la lecture.
+
+**Il s'édite aussi à l'écran**, depuis le 05/09/2026 : les options de
+l'intégration ouvrent un menu, « Réglages » d'un côté et « Listes de sources » de
+l'autre. On y choisit un média parmi ceux que cette installation collecte, et son
+fichier s'affiche tel quel, commentaires compris. Enregistrer le réécrit.
+
+Deux portes, un seul fichier. Ranger aussi la liste dans les options donnerait
+deux vérités, et le jour où elles divergeraient personne ne saurait laquelle le
+passage a lue. Cent sous-reddits se collent toujours mieux depuis un éditeur ;
+ajouter deux comptes et cinq recherches se fait mieux à l'écran, depuis le
+téléphone.
 
 | Média | Ce qu'une ligne veut dire |
 |---|---|
